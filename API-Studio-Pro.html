@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Studio Pro</title>
+    
+    <!-- 引入高级字体: Inter (UI) & JetBrains Mono (Code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        // 重新定义的专业暗色阶 (接近 VSCode/Figma)
+                        surface: {
+                            50: '#fafafa',
+                            100: '#f4f4f5',
+                            200: '#e4e4e7',
+                            300: '#d4d4d8',
+                            800: '#27272a',
+                            900: '#18181b',  /* 极暗背景 */
+                            950: '#0f0f11',  /* 最暗背景 */
+                        },
+                        ui: {
+                            border: '#e4e4e7',
+                            borderDark: '#333338',
+                            primary: '#2563eb', // 更沉稳的蓝
+                            primaryHover: '#1d4ed8',
+                        },
+                        http: {
+                            get: '#10b981',
+                            post: '#eab308',
+                            put: '#3b82f6',
+                            delete: '#ef4444',
+                            patch: '#f97316'
+                        }
+                    },
+                    boxShadow: {
+                        'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                        'float': '0 4px 12px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0,0,0,0.2)',
+                        'floatDark': '0 8px 24px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255,255,255,0.1)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 全局字体平滑 */
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* 极致纤细的滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+        .dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+        
+        /* 隐藏输入框焦点边框，用Tailwind的Ring代替 */
+        input:focus, textarea:focus, select:focus { outline: none !important; box-shadow: none !important; }
+
+        /* 精致下拉框小箭头 */
+        .custom-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23a1a1aa'%3E%3Cpath fill-rule='evenodd' d='M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z' clip-rule='evenodd'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 4px center;
+            background-size: 16px 16px;
+            padding-right: 24px !important;
+        }
+
+        /* 拖拽列宽魔法变量 */
+        #params-container, #params-header { --w-key: 30%; --w-val: 35%; }
+        #headers-container, #headers-header { --w-key: 35%; }
+
+        /* 优雅的拖拽把手 (细线设计) */
+        .resizer {
+            position: absolute;
+            right: -2px;
+            top: 20%;
+            bottom: 20%;
+            width: 4px;
+            cursor: col-resize;
+            z-index: 10;
+            transition: all 0.2s;
+            border-radius: 2px;
+        }
+        /* 悬停时显示为蓝色细线 */
+        .resizer:hover, .resizer.active {
+            background-color: #2563eb;
+            top: 0; bottom: 0; right: -1px; width: 2px; border-radius: 0;
+        }
+
+        /* 数据行输入框的柔和过渡 */
+        .data-input {
+            transition: background-color 0.15s, border-color 0.15s;
+            border: 1px solid transparent;
+        }
+        .data-input:focus {
+            background-color: transparent !important;
+            border-color: #3b82f6 !important;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen bg-surface-50 dark:bg-surface-900 text-gray-800 dark:text-gray-300 flex overflow-hidden text-[13px] transition-colors duration-200">
+
+    <!-- 侧边栏 (更紧凑) -->
+    <aside class="w-60 bg-surface-50 dark:bg-surface-900 border-r border-ui-border dark:border-ui-borderDark flex flex-col z-10">
+        <div class="h-[46px] px-4 flex items-center justify-between shrink-0">
+            <div class="font-semibold text-[14px] text-gray-900 dark:text-gray-100 flex items-center tracking-tight">
+                <div class="w-6 h-6 rounded bg-gradient-to-br from-ui-primary to-blue-400 text-white flex items-center justify-center mr-2 shadow-sm">
+                    <i class="fa-solid fa-bolt text-[10px]"></i>
+                </div>
+                Studio
+            </div>
+            <button class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors h-6 w-6 rounded hover:bg-surface-200 dark:hover:bg-surface-800 flex items-center justify-center"><i class="fa-solid fa-plus text-[12px]"></i></button>
+        </div>
+        
+        <div class="px-3 pb-2">
+            <div class="bg-white dark:bg-surface-800 flex items-center px-2 py-1.5 rounded-md border border-ui-border dark:border-ui-borderDark focus-within:border-ui-primary dark:focus-within:border-ui-primary focus-within:ring-1 focus-within:ring-ui-primary/20 transition-all shadow-subtle">
+                <i class="fa-solid fa-magnifying-glass text-gray-400 text-[11px] mr-2"></i>
+                <input type="text" placeholder="Search..." class="bg-transparent w-full placeholder-gray-400 text-gray-800 dark:text-gray-200">
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-2 pb-2 select-none">
+            <!-- 文件夹 -->
+            <div class="mb-0.5">
+                <div class="flex items-center px-2 py-1.5 hover:bg-surface-200 dark:hover:bg-surface-800/60 cursor-pointer rounded-md text-gray-700 dark:text-gray-200 transition-colors group">
+                    <i class="fa-solid fa-chevron-down text-[10px] text-gray-400 mr-1.5 group-hover:text-gray-600 dark:group-hover:text-gray-300"></i>
+                    <i class="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]"></i>
+                    <span class="font-medium">User Management</span>
+                </div>
+                <!-- 接口项 (精调颜色和字号) -->
+                <div class="pl-7 pr-2 py-1 flex items-center cursor-pointer rounded-md bg-blue-50 dark:bg-blue-900/20 text-ui-primary dark:text-blue-400 mt-0.5 relative before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[2px] before:bg-ui-primary before:rounded-r">
+                    <span class="text-http-get font-mono font-semibold text-[10px] w-8">GET</span>
+                    <span class="truncate font-medium">List Users</span>
+                </div>
+                <div class="pl-7 pr-2 py-1 flex items-center hover:bg-surface-200 dark:hover:bg-surface-800/60 cursor-pointer rounded-md text-gray-600 dark:text-gray-400 mt-0.5 transition-colors">
+                    <span class="text-http-post font-mono font-semibold text-[10px] w-8">POST</span>
+                    <span class="truncate">Create User</span>
+                </div>
+                <div class="pl-7 pr-2 py-1 flex items-center hover:bg-surface-200 dark:hover:bg-surface-800/60 cursor-pointer rounded-md text-gray-600 dark:text-gray-400 mt-0.5 transition-colors">
+                    <span class="text-http-delete font-mono font-semibold text-[10px] w-8">DEL</span>
+                    <span class="truncate">Delete User</span>
+                </div>
+            </div>
+            
+            <div class="mt-2 mb-0.5">
+                <div class="flex items-center px-2 py-1.5 hover:bg-surface-200 dark:hover:bg-surface-800/60 cursor-pointer rounded-md text-gray-700 dark:text-gray-200 transition-colors group">
+                    <i class="fa-solid fa-chevron-right text-[10px] text-gray-400 mr-1.5"></i>
+                    <i class="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]"></i>
+                    <span class="font-medium text-gray-600 dark:text-gray-300">Orders API</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1e1e1e] transition-colors duration-200">
+        <!-- 顶部工具栏 (更极简) -->
+        <header class="h-[46px] border-b border-ui-border dark:border-ui-borderDark flex items-center justify-between px-4 bg-white dark:bg-surface-900 z-20">
+            <div class="flex items-center space-x-2 relative">
+                <!-- 下拉按钮去除了笨重的边框，改为轻盈的背景 -->
+                <button id="envDropdownBtn" class="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-surface-100 dark:bg-surface-800 px-2.5 py-1 rounded cursor-pointer transition-colors font-medium">
+                    <div class="w-2 h-2 rounded-full bg-http-get mr-2"></div>
+                    Development
+                    <i class="fa-solid fa-chevron-down ml-2 text-[10px] opacity-50"></i>
+                </button>
+                
+                <div id="envDropdownMenu" class="hidden absolute top-9 left-0 w-48 bg-white dark:bg-surface-800 border border-ui-border dark:border-ui-borderDark rounded-md shadow-float dark:shadow-floatDark py-1 z-50">
+                    <div class="px-3 py-1.5 hover:bg-surface-100 dark:hover:bg-surface-900 cursor-pointer flex items-center text-gray-800 dark:text-gray-200">
+                        <div class="w-2 h-2 rounded-full bg-http-get mr-2"></div> Development
+                    </div>
+                    <div class="px-3 py-1.5 hover:bg-surface-100 dark:hover:bg-surface-900 cursor-pointer flex items-center text-gray-800 dark:text-gray-200">
+                        <div class="w-2 h-2 rounded-full bg-http-post mr-2"></div> Staging
+                    </div>
+                    <div class="px-3 py-1.5 hover:bg-surface-100 dark:hover:bg-surface-900 cursor-pointer flex items-center text-gray-800 dark:text-gray-200">
+                        <div class="w-2 h-2 rounded-full bg-http-delete mr-2"></div> Production
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+                <button class="px-3 py-1 bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-700 dark:text-gray-200 rounded transition-colors font-medium flex items-center">
+                    <i class="fa-regular fa-floppy-disk mr-1.5 text-[12px] opacity-70"></i> Save
+                </button>
+                <div class="h-4 w-[1px] bg-gray-200 dark:bg-gray-700 mx-1"></div>
+                <button id="themeToggleBtn" class="w-7 h-7 flex items-center justify-center rounded text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors">
+                    <i id="themeIcon" class="fa-solid fa-sun text-[14px]"></i>
+                </button>
+                <button id="settingsBtn" class="w-7 h-7 flex items-center justify-center rounded text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors">
+                    <i class="fa-solid fa-gear text-[14px]"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 请求地址栏 (精雕细琢的输入框) -->
+        <div class="p-4 pb-3">
+            <div class="flex items-stretch border border-ui-border dark:border-ui-borderDark rounded-md shadow-subtle focus-within:border-ui-primary dark:focus-within:border-ui-primary focus-within:ring-2 focus-within:ring-ui-primary/20 transition-all bg-white dark:bg-surface-800/50 h-[38px]">
+                <div class="relative flex items-center border-r border-ui-border dark:border-ui-borderDark hover:bg-surface-50 dark:hover:bg-surface-800 rounded-l-md transition-colors">
+                    <select id="methodSelect" class="custom-select w-[90px] h-full bg-transparent text-http-get font-mono font-bold px-3 cursor-pointer z-10">
+                        <option value="GET" class="text-http-get">GET</option>
+                        <option value="POST" class="text-http-post">POST</option>
+                        <option value="PUT" class="text-http-put">PUT</option>
+                        <option value="DELETE" class="text-http-delete">DEL</option>
+                    </select>
+                </div>
+                <input type="text" value="https://api.example.com/v1/users?page=1&limit=10" placeholder="Enter request URL" class="flex-1 bg-transparent px-3 text-gray-900 dark:text-gray-100 font-mono text-[13px]">
+                <button class="bg-ui-primary hover:bg-ui-primaryHover text-white font-medium px-6 transition-colors flex items-center rounded-r-md">
+                    Send
+                </button>
+            </div>
+        </div>
+
+        <!-- 分上下区域 -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            
+            <!-- 上半部：请求参数配置 -->
+            <div class="flex-1 flex flex-col min-h-[150px]">
+                <!-- Tabs (下划线动画设计) -->
+                <div class="flex px-4 border-b border-ui-border dark:border-ui-borderDark bg-white dark:bg-[#1e1e1e]">
+                    <div class="flex space-x-6 relative">
+                        <!-- Active 状态通过类控制下划线 -->
+                        <button class="req-tab-btn active pb-2 pt-1 font-medium text-ui-primary relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-ui-primary after:rounded-t-sm transition-colors" data-target="req-params">Params</button>
+                        <button class="req-tab-btn pb-2 pt-1 font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-transparent transition-colors" data-target="req-headers">
+                            Headers <span class="ml-1 text-[11px] px-1.5 py-0.5 rounded-full bg-surface-100 dark:bg-surface-800 text-gray-500">7</span>
+                        </button>
+                        <button class="req-tab-btn pb-2 pt-1 font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-transparent transition-colors" data-target="req-body">Body</button>
+                        <button class="req-tab-btn pb-2 pt-1 font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-transparent transition-colors" data-target="req-auth">Auth</button>
+                    </div>
+                </div>
+
+                <!-- Tab 内容 -->
+                <div class="flex-1 overflow-y-auto bg-white dark:bg-[#1e1e1e] p-4">
+                    
+                    <!-- Params (极简表格无外边框) -->
+                    <div id="req-params" class="req-tab-content block h-full">
+                        <div class="flex flex-col text-[13px]">
+                            <!-- 表头 -->
+                            <div id="params-header" class="flex text-gray-500 dark:text-gray-400 py-1.5 border-b border-ui-border dark:border-ui-borderDark font-medium relative">
+                                <div class="w-8 flex-shrink-0"></div>
+                                <div class="w-[var(--w-key)] flex-shrink-0 px-2 relative group">
+                                    Key <div class="resizer" data-col="--w-key" data-target="params"></div>
+                                </div>
+                                <div class="w-[var(--w-val)] flex-shrink-0 px-2 relative group">
+                                    Value <div class="resizer" data-col="--w-val" data-target="params"></div>
+                                </div>
+                                <div class="flex-1 px-2">Description</div>
+                            </div>
+                            <!-- 数据行 -->
+                            <div id="params-container">
+                                <div class="flex items-center border-b border-surface-100 dark:border-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-800/30 group py-1">
+                                    <div class="w-8 flex-shrink-0 flex justify-center"><input type="checkbox" checked class="accent-ui-primary w-3.5 h-3.5 rounded-sm border-gray-300"></div>
+                                    <div class="w-[var(--w-key)] flex-shrink-0 px-1">
+                                        <input type="text" value="page" class="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                    <div class="w-[var(--w-val)] flex-shrink-0 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
+                                        <input type="text" value="1" class="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                    <div class="flex-1 flex items-center px-1 pr-2 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
+                                        <input type="text" value="Page number" class="data-input flex-1 bg-transparent px-1.5 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                        <button class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 px-1 transition-opacity"><i class="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center border-b border-surface-100 dark:border-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-800/30 group py-1">
+                                    <div class="w-8 flex-shrink-0 flex justify-center"><input type="checkbox" checked class="accent-ui-primary w-3.5 h-3.5 rounded-sm border-gray-300"></div>
+                                    <div class="w-[var(--w-key)] flex-shrink-0 px-1">
+                                        <input type="text" value="limit" class="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                    <div class="w-[var(--w-val)] flex-shrink-0 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
+                                        <input type="text" value="10" class="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                    <div class="flex-1 flex items-center px-1 pr-2 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
+                                        <input type="text" placeholder="Description" class="data-input flex-1 bg-transparent px-1.5 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                        <button class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 px-1 transition-opacity"><i class="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                </div>
+                                <!-- 空白行 -->
+                                <div class="flex items-center group py-1 hover:bg-surface-50 dark:hover:bg-surface-800/30">
+                                    <div class="w-8 flex-shrink-0"></div>
+                                    <div class="w-[var(--w-key)] flex-shrink-0 px-1">
+                                        <input type="text" placeholder="Key" class="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-500 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                    <div class="w-[var(--w-val)] flex-shrink-0 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
+                                        <input type="text" placeholder="Value" class="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-500 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                    <div class="flex-1 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
+                                        <input type="text" placeholder="Description" class="data-input w-full bg-transparent px-1.5 py-1 rounded text-gray-500 hover:bg-surface-100 dark:hover:bg-surface-800">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Headers -->
+                    <div id="req-headers" class="req-tab-content hidden h-full">
+                        <div class="flex items-center text-gray-500 h-full justify-center">Headers panel (similar to Params)</div>
+                    </div>
+
+                    <!-- Body -->
+                    <div id="req-body" class="req-tab-content hidden h-full flex-col">
+                        <div class="flex items-center space-x-3 mb-3 text-[12px]">
+                            <label class="flex items-center text-gray-500 dark:text-gray-400 cursor-pointer"><input type="radio" name="body" class="mr-1.5 accent-ui-primary"> none</label>
+                            <label class="flex items-center text-gray-900 dark:text-gray-200 font-medium cursor-pointer"><input type="radio" name="body" checked class="mr-1.5 accent-ui-primary"> raw</label>
+                            <div class="h-3 w-[1px] bg-ui-border dark:bg-ui-borderDark mx-1"></div>
+                            <select class="custom-select bg-transparent text-ui-primary font-medium hover:text-ui-primaryHover cursor-pointer">
+                                <option>JSON</option>
+                                <option>Text</option>
+                            </select>
+                        </div>
+                        <!-- 代码输入区 (IDE 风格) -->
+                        <div class="flex-1 rounded-md bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-ui-borderDark flex overflow-hidden">
+                            <div class="w-10 bg-surface-100 dark:bg-surface-950 border-r border-ui-border dark:border-ui-borderDark text-right pr-2 py-2 text-gray-400 font-mono text-[12px] select-none">
+                                1<br>2<br>3
+                            </div>
+                            <textarea class="flex-1 bg-transparent text-gray-800 dark:text-gray-300 font-mono text-[13px] p-2 resize-none whitespace-pre leading-relaxed" spellcheck="false">{
+  "status": "success"
+}</textarea>
+                        </div>
+                    </div>
+
+                    <!-- Auth -->
+                    <div id="req-auth" class="req-tab-content hidden h-full">
+                        <div class="flex items-center text-gray-500 h-full justify-center">Auth panel</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 可拖动分隔条 (更细) -->
+            <div class="h-[1px] bg-ui-border dark:bg-ui-borderDark relative cursor-row-resize hover:bg-ui-primary dark:hover:bg-ui-primary transition-colors z-10">
+                <!-- 隐形热区增加拖拽范围 -->
+                <div class="absolute -top-1 -bottom-1 left-0 right-0"></div>
+            </div>
+
+            <!-- 下半部：响应结果区 -->
+            <div class="flex-1 flex flex-col min-h-[150px] bg-white dark:bg-surface-950">
+                
+                <!-- 响应状态栏 -->
+                <div class="flex items-center justify-between px-4 border-b border-ui-border dark:border-ui-borderDark bg-surface-50/50 dark:bg-[#1e1e1e]">
+                    <div class="flex space-x-6 relative">
+                        <button class="res-tab-btn active pb-2 pt-2 font-medium text-ui-primary relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-ui-primary after:rounded-t-sm" data-target="res-body">Response</button>
+                        <button class="res-tab-btn pb-2 pt-2 font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-transparent" data-target="res-headers">Headers <span class="ml-1 text-[11px] text-gray-400">12</span></button>
+                    </div>
+                    <!-- 状态展示 (精调颜色) -->
+                    <div class="flex items-center space-x-4 font-mono text-[12px]">
+                        <span class="text-gray-500 dark:text-gray-400">Status: <span class="text-http-get font-semibold ml-1">200 OK</span></span>
+                        <span class="text-gray-500 dark:text-gray-400">Time: <span class="text-http-get font-semibold ml-1">42 ms</span></span>
+                        <span class="text-gray-500 dark:text-gray-400">Size: <span class="text-http-get font-semibold ml-1">1.2 KB</span></span>
+                    </div>
+                </div>
+
+                <!-- 响应内容区 -->
+                <div class="flex-1 overflow-y-auto p-4 relative group">
+                    <div id="res-body" class="res-tab-content block h-full">
+                        <!-- 右上角工具 -->
+                        <div class="absolute right-4 top-4 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button class="w-6 h-6 rounded bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-500 dark:text-gray-300 flex items-center justify-center border border-ui-border dark:border-ui-borderDark"><i class="fa-regular fa-copy text-[11px]"></i></button>
+                        </div>
+                        
+                        <!-- JSON 语法高亮 (使用冷色调优化暗色显示) -->
+                        <div class="font-mono text-[13px] leading-[1.6] overflow-x-auto pb-4">
+                            <span class="text-gray-400">{</span><br>
+                            &nbsp;&nbsp;<span class="text-[#0284c7] dark:text-[#38bdf8]">"code"</span>: <span class="text-[#059669] dark:text-[#a3e635]">200</span>,<br>
+                            &nbsp;&nbsp;<span class="text-[#0284c7] dark:text-[#38bdf8]">"message"</span>: <span class="text-[#16a34a] dark:text-[#4ade80]">"success"</span>,<br>
+                            &nbsp;&nbsp;<span class="text-[#0284c7] dark:text-[#38bdf8]">"data"</span>: <span class="text-gray-400">{</span><br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#0284c7] dark:text-[#38bdf8]">"id"</span>: <span class="text-[#ea580c] dark:text-[#fcd34d]">"usr_98a7sd9f"</span>,<br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#0284c7] dark:text-[#38bdf8]">"username"</span>: <span class="text-[#16a34a] dark:text-[#4ade80]">"admin_fox"</span>,<br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#0284c7] dark:text-[#38bdf8]">"is_active"</span>: <span class="text-[#c026d3] dark:text-[#c084fc]">true</span><br>
+                            &nbsp;&nbsp;<span class="text-gray-400">}</span><br>
+                            <span class="text-gray-400">}</span>
+                        </div>
+                    </div>
+
+                    <div id="res-headers" class="res-tab-content hidden h-full text-gray-500 flex justify-center pt-4">
+                        Response Headers Panel
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ======= 设置弹窗 (毛玻璃 & 精致阴影) ======= -->
+    <div id="settingsModalOverlay" class="fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-200">
+        <!-- 弹窗本体 -->
+        <div class="bg-white dark:bg-[#1e1e1e] w-full max-w-2xl rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="settingsModalBox">
+            
+            <div class="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+                <h2 class="font-semibold text-gray-800 dark:text-gray-100">Preferences</h2>
+                <button id="closeSettingsBtn" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors w-6 h-6 flex items-center justify-center rounded hover:bg-surface-200 dark:hover:bg-surface-800">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            
+            <div class="flex h-[360px]">
+                <!-- 左侧 -->
+                <div class="w-40 border-r border-ui-border dark:border-ui-borderDark bg-surface-50/50 dark:bg-surface-900/50 p-3 flex flex-col gap-1">
+                    <div class="px-3 py-1.5 text-ui-primary font-medium bg-ui-primary/10 rounded-md cursor-pointer text-[13px]">General</div>
+                    <div class="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">Appearance</div>
+                    <div class="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">Shortcuts</div>
+                </div>
+                <!-- 右侧 -->
+                <div class="flex-1 p-6 overflow-y-auto">
+                    <div class="mb-5">
+                        <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">Request Timeout (ms)</label>
+                        <input type="number" value="10000" class="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none font-mono">
+                    </div>
+                    <div class="mb-5">
+                        <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">Editor Font Size</label>
+                        <select class="custom-select w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary transition-all outline-none">
+                            <option>12px</option>
+                            <option selected>13px (Default)</option>
+                            <option>14px</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="flex items-center cursor-pointer group">
+                            <div class="relative flex items-center justify-center w-4 h-4 mr-2">
+                                <input type="checkbox" checked class="peer appearance-none w-4 h-4 border border-gray-300 dark:border-[#555] rounded-[3px] checked:bg-ui-primary checked:border-ui-primary transition-colors cursor-pointer">
+                                <i class="fa-solid fa-check absolute text-white text-[10px] opacity-0 peer-checked:opacity-100 pointer-events-none"></i>
+                            </div>
+                            <span class="text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">Auto-save requests</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
+                <button id="cancelSettingsBtn" class="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium">Cancel</button>
+                <button class="px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 主题切换逻辑
+        const htmlEl = document.documentElement;
+        document.getElementById('themeToggleBtn').addEventListener('click', () => {
+            htmlEl.classList.toggle('dark');
+            const icon = document.getElementById('themeIcon');
+            icon.className = htmlEl.classList.contains('dark') ? 'fa-solid fa-sun text-[14px]' : 'fa-solid fa-moon text-[14px]';
+        });
+
+        // 2. 环境下拉菜单逻辑
+        const envBtn = document.getElementById('envDropdownBtn');
+        const envMenu = document.getElementById('envDropdownMenu');
+        envBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            envMenu.classList.toggle('hidden');
+        });
+        document.addEventListener('click', (e) => {
+            if (!envMenu.contains(e.target)) envMenu.classList.add('hidden');
+        });
+
+        // 3. 设置弹窗逻辑 (带淡入淡出动画)
+        const modal = document.getElementById('settingsModalOverlay');
+        const modalBox = document.getElementById('settingsModalBox');
+        const openModalBtn = document.getElementById('settingsBtn');
+        const closeBtns = [document.getElementById('closeSettingsBtn'), document.getElementById('cancelSettingsBtn')];
+        
+        function openModal() {
+            modal.classList.remove('hidden');
+            // 小延迟触发动画
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalBox.classList.remove('scale-95');
+                modalBox.classList.add('scale-100');
+            }, 10);
+        }
+        
+        function closeModal() {
+            modal.classList.add('opacity-0');
+            modalBox.classList.remove('scale-100');
+            modalBox.classList.add('scale-95');
+            setTimeout(() => { modal.classList.add('hidden'); }, 200);
+        }
+
+        openModalBtn.addEventListener('click', openModal);
+        closeBtns.forEach(btn => btn.addEventListener('click', closeModal));
+        modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+
+        // 4. Tab 切换逻辑 (处理下划线样式)
+        function setupTabs(btnClass, contentClass) {
+            const btns = document.querySelectorAll(btnClass);
+            const contents = document.querySelectorAll(contentClass);
+            btns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    btns.forEach(b => {
+                        b.classList.remove('active', 'text-ui-primary');
+                        b.classList.add('text-gray-500', 'dark:text-gray-400');
+                        // 隐藏下划线
+                        b.classList.replace('after:bg-ui-primary', 'after:bg-transparent');
+                    });
+                    contents.forEach(c => c.classList.replace('block', 'hidden'));
+                    
+                    btn.classList.add('active', 'text-ui-primary');
+                    btn.classList.remove('text-gray-500', 'dark:text-gray-400');
+                    // 显示下划线
+                    btn.classList.replace('after:bg-transparent', 'after:bg-ui-primary');
+                    
+                    document.getElementById(btn.getAttribute('data-target')).classList.replace('hidden', 'block');
+                });
+            });
+        }
+        setupTabs('.req-tab-btn', '.req-tab-content');
+        setupTabs('.res-tab-btn', '.res-tab-content');
+
+        // 5. 列宽拖拽逻辑 (修改 CSS 变量)
+        function initResizer() {
+            const resizers = document.querySelectorAll('.resizer');
+            let isResizing = false;
+            let currentResizer = null;
+            let startX, startWidth, targetContainer, colVarName, containerWidth;
+
+            resizers.forEach(resizer => {
+                resizer.addEventListener('mousedown', function(e) {
+                    isResizing = true;
+                    currentResizer = resizer;
+                    startX = e.pageX;
+                    colVarName = resizer.getAttribute('data-col'); 
+                    const targetName = resizer.getAttribute('data-target'); 
+                    targetContainer = document.getElementById(targetName + '-container');
+                    const headerContainer = document.getElementById(targetName + '-header');
+                    
+                    const parentCell = resizer.parentElement;
+                    startWidth = parentCell.getBoundingClientRect().width;
+                    // 减去 Checkbox/空隙 占用的固定宽度(这里预估32px)
+                    containerWidth = headerContainer.getBoundingClientRect().width - 32; 
+
+                    resizer.classList.add('active');
+                    document.body.style.cursor = 'col-resize';
+                    e.preventDefault();
+                });
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isResizing) return;
+                const deltaX = e.pageX - startX;
+                let newWidth = startWidth + deltaX;
+                let percentage = (newWidth / containerWidth) * 100;
+                percentage = Math.max(15, Math.min(percentage, 60)); // 限制范围
+                
+                targetContainer.style.setProperty(colVarName, `${percentage}%`);
+                document.getElementById(currentResizer.getAttribute('data-target') + '-header').style.setProperty(colVarName, `${percentage}%`);
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isResizing) {
+                    isResizing = false;
+                    currentResizer.classList.remove('active');
+                    document.body.style.cursor = '';
+                }
+            });
+        }
+        initResizer();
+
+        // 6. Http 方法选择器颜色联动
+        const methodSelect = document.getElementById('methodSelect');
+        methodSelect.addEventListener('change', function() {
+            this.classList.remove('text-http-get', 'text-http-post', 'text-http-put', 'text-http-delete');
+            if(this.value === 'GET') this.classList.add('text-http-get');
+            if(this.value === 'POST') this.classList.add('text-http-post');
+            if(this.value === 'PUT') this.classList.add('text-http-put');
+            if(this.value === 'DELETE') this.classList.add('text-http-delete');
+        });
+    </script>
+</body>
+</html>
