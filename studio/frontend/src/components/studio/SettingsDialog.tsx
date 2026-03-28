@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import type { Dispatch, SetStateAction } from 'react'
 
 import type { Environment, Settings } from '../../api/types'
+import { useDropdown } from '../template/DropdownContext'
 import type { Theme } from '../../lib/theme'
 import { envToneDot } from '../../lib/studioUtils'
 
@@ -44,12 +45,18 @@ export function SettingsDialog({
   onClose,
   onSave,
 }: SettingsDialogProps) {
+  const dd = useDropdown()
+  const themeValue = (settingsDraft?.theme ?? settings?.theme ?? 'system') as Theme
+  const themeLabel = themeValue === 'system' ? 'System' : themeValue === 'light' ? 'Light' : 'Dark'
+  const languageValue = (settingsDraft?.language ?? settings?.language ?? 'zh') as 'zh' | 'en'
+  const languageLabel = languageValue === 'zh' ? '中文' : 'English'
+
   return (
     <div
       id="settingsModalOverlay"
       className={clsx(
-        'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
-        open ? 'flex opacity-100' : 'hidden opacity-0'
+        'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-none z-[160] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200',
+        open ? 'opacity-100 pointer-events-auto backdrop-blur-sm' : 'opacity-0 pointer-events-none backdrop-blur-none'
       )}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
@@ -57,7 +64,10 @@ export function SettingsDialog({
     >
       <div
         id="settingsModalBox"
-        className="bg-white dark:bg-[#1e1e1e] w-full max-w-2xl rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden transform scale-100 transition-transform duration-200"
+        className={clsx(
+          'bg-white dark:bg-[#1e1e1e] w-full max-w-2xl rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200',
+          open ? 'scale-100' : 'scale-95'
+        )}
       >
         <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
           <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('preferences')}</h2>
@@ -108,41 +118,91 @@ export function SettingsDialog({
 
             <div className="mb-5">
               <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">{t('theme')}</label>
-              <select
-                value={settingsDraft?.theme ?? settings?.theme ?? 'system'}
-                onChange={(e) =>
-                  setSettingsDraft((prev) => {
-                    const base = prev ?? (settings ? { ...settings } : null)
-                    if (!base) return prev
-                    return { ...base, theme: e.target.value as Theme }
-                  })
-                }
-                className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-              >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
+              <div id="dd-settings-theme" className="relative">
+                <button
+                  type="button"
+                  className="w-full flex items-center bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 cursor-pointer transition-all hover:bg-surface-100 dark:hover:bg-surface-800"
+                  onClick={() => dd.toggle('dd-settings-theme')}
+                >
+                  <span className="truncate">{themeLabel}</span>
+                  <i
+                    className={clsx(
+                      'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
+                      dd.isOpen('dd-settings-theme') ? 'rotate-180' : ''
+                    )}
+                  />
+                </button>
+                <div className={clsx('custom-dropdown-menu w-full', dd.isOpen('dd-settings-theme') ? '' : 'hidden')}>
+                  {(['system', 'light', 'dark'] as Theme[]).map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      className="custom-dropdown-item"
+                      onClick={() => {
+                        dd.close()
+                        setSettingsDraft((prev) => {
+                          const base = prev ?? (settings ? { ...settings } : null)
+                          if (!base) return prev
+                          return { ...base, theme: val }
+                        })
+                      }}
+                    >
+                      {val === 'system' ? 'System' : val === 'light' ? 'Light' : 'Dark'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="mb-5">
               <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
                 {t('language')}
               </label>
-              <select
-                value={settingsDraft?.language ?? settings?.language ?? 'zh'}
-                onChange={(e) =>
-                  setSettingsDraft((prev) => {
-                    const base = prev ?? (settings ? { ...settings } : null)
-                    if (!base) return prev
-                    return { ...base, language: e.target.value as 'zh' | 'en' }
-                  })
-                }
-                className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-              >
-                <option value="zh">涓枃</option>
-                <option value="en">English</option>
-              </select>
+              <div id="dd-settings-language" className="relative">
+                <button
+                  type="button"
+                  className="w-full flex items-center bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 cursor-pointer transition-all hover:bg-surface-100 dark:hover:bg-surface-800"
+                  onClick={() => dd.toggle('dd-settings-language')}
+                >
+                  <span className="truncate">{languageLabel}</span>
+                  <i
+                    className={clsx(
+                      'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
+                      dd.isOpen('dd-settings-language') ? 'rotate-180' : ''
+                    )}
+                  />
+                </button>
+                <div className={clsx('custom-dropdown-menu w-full', dd.isOpen('dd-settings-language') ? '' : 'hidden')}>
+                  <button
+                    type="button"
+                    className="custom-dropdown-item"
+                    onClick={() => {
+                      dd.close()
+                      setSettingsDraft((prev) => {
+                        const base = prev ?? (settings ? { ...settings } : null)
+                        if (!base) return prev
+                        return { ...base, language: 'zh' }
+                      })
+                    }}
+                  >
+                    中文
+                  </button>
+                  <button
+                    type="button"
+                    className="custom-dropdown-item"
+                    onClick={() => {
+                      dd.close()
+                      setSettingsDraft((prev) => {
+                        const base = prev ?? (settings ? { ...settings } : null)
+                        if (!base) return prev
+                        return { ...base, language: 'en' }
+                      })
+                    }}
+                  >
+                    English
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="mb-5">
@@ -290,4 +350,3 @@ export function SettingsDialog({
     </div>
   )
 }
-

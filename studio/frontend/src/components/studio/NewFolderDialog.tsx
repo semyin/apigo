@@ -27,15 +27,20 @@ export function NewFolderDialog({
   return (
     <div
       className={clsx(
-        'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
-        open ? 'flex opacity-100' : 'hidden opacity-0'
+        'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-none z-[160] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200',
+        open ? 'opacity-100 pointer-events-auto backdrop-blur-sm' : 'opacity-0 pointer-events-none backdrop-blur-none'
       )}
       onMouseDown={(e) => {
         if (busy) return
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+      <div
+        className={clsx(
+          'bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200',
+          open ? 'scale-100' : 'scale-95'
+        )}
+      >
         <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
           <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('newFolder')}</h2>
           <button
