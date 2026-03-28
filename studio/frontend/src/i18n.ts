@@ -1,0 +1,100 @@
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+
+export function initI18n() {
+  if (i18n.isInitialized) return i18n
+
+  i18n.use(initReactI18next).init({
+    resources: {
+      zh: {
+        translation: {
+          appName: 'API Studio Pro',
+          environment: '环境',
+          theme: '主题',
+          language: '语言',
+          send: '发送',
+          params: '参数',
+          headers: '请求头',
+          body: 'Body',
+          auth: '鉴权',
+          response: '响应',
+          resHeaders: '响应头',
+          urlModeFull: '完整 URL',
+          urlModeBasePath: '环境 + Path',
+          baseUrl: 'Base URL',
+          path: 'Path',
+          add: '新增',
+          key: 'Key',
+          value: 'Value',
+          type: 'Type',
+          description: 'Description',
+          noAuth: '无鉴权',
+          bearerToken: 'Bearer Token',
+          basicAuth: 'Basic Auth',
+          apiKey: 'API Key',
+          apiKeyIn: '位置',
+          header: 'Header',
+          query: 'Query',
+          timeout: '请求超时(ms)',
+          autoSave: '自动保存',
+          import: '导入',
+          exportPostman: '导出 Postman',
+          exportOpenapi: '导出 OpenAPI',
+          newFolder: '新建文件夹',
+          newRequest: '新建请求',
+          editBase: 'Base',
+          editVars: '变量',
+        },
+      },
+      en: {
+        translation: {
+          appName: 'API Studio Pro',
+          environment: 'Environment',
+          theme: 'Theme',
+          language: 'Language',
+          send: 'Send',
+          params: 'Params',
+          headers: 'Headers',
+          body: 'Body',
+          auth: 'Auth',
+          response: 'Response',
+          resHeaders: 'Headers',
+          urlModeFull: 'Full URL',
+          urlModeBasePath: 'Base + Path',
+          baseUrl: 'Base URL',
+          path: 'Path',
+          add: 'Add',
+          key: 'Key',
+          value: 'Value',
+          type: 'Type',
+          description: 'Description',
+          noAuth: 'No Auth',
+          bearerToken: 'Bearer Token',
+          basicAuth: 'Basic Auth',
+          apiKey: 'API Key',
+          apiKeyIn: 'In',
+          header: 'Header',
+          query: 'Query',
+          timeout: 'Timeout (ms)',
+          autoSave: 'Auto-save',
+          import: 'Import',
+          exportPostman: 'Export Postman',
+          exportOpenapi: 'Export OpenAPI',
+          newFolder: 'New Folder',
+          newRequest: 'New Request',
+          editBase: 'Base',
+          editVars: 'Vars',
+        },
+      },
+    },
+    lng: 'zh',
+    fallbackLng: 'en',
+    interpolation: {
+      escapeValue: false,
+    },
+  })
+
+  return i18n
+}
+
+export { i18n }
