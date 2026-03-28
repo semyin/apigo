@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 
 import type { Auth, AuthType } from '../../api/types'
 import { useDropdown } from './DropdownContext'
@@ -12,14 +13,15 @@ export function AuthTemplateEditor({
 }) {
   const a: Auth = auth ?? { type: 'none' }
   const dd = useDropdown()
+  const { t: tr } = useTranslation()
   const ddId = 'dd-auth-type'
   const typeOpen = dd.isOpen(ddId)
 
   return (
     <div className="flex flex-col text-[13px]">
       <div className="flex text-gray-500 dark:text-gray-400 py-1.5 border-b border-ui-border dark:border-ui-borderDark font-medium">
-        <div className="w-[220px] flex-shrink-0 px-2">Type</div>
-        <div className="flex-1 px-2">Value</div>
+        <div className="w-[220px] flex-shrink-0 px-2">{tr('type')}</div>
+        <div className="flex-1 px-2">{tr('value')}</div>
       </div>
 
       <div className="flex items-center border-b border-surface-100 dark:border-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-800/30 py-1">
@@ -30,7 +32,7 @@ export function AuthTemplateEditor({
               className="data-input w-full flex items-center bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer"
               onClick={() => dd.toggle(ddId)}
             >
-              <span>{authLabel(a.type)}</span>
+              <span>{authLabel(a.type, tr)}</span>
               <i
                 className={clsx(
                   'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
@@ -40,11 +42,11 @@ export function AuthTemplateEditor({
             </button>
             <div className={clsx('custom-dropdown-menu w-full', typeOpen ? '' : 'hidden')}>
               {([
-                { label: 'No Auth', value: 'none' },
-                { label: 'Bearer Token', value: 'bearer' },
-                { label: 'API Key', value: 'apikey' },
-                { label: 'Basic Auth', value: 'basic' },
-                { label: 'OAuth 2.0', value: 'oauth2' },
+                { label: tr('noAuth'), value: 'none' },
+                { label: tr('bearerToken'), value: 'bearer' },
+                { label: tr('apiKey'), value: 'apikey' },
+                { label: tr('basicAuth'), value: 'basic' },
+                { label: tr('oauth2'), value: 'oauth2' },
               ] as const).map((opt) => (
                 <button
                   key={opt.value}
@@ -66,7 +68,7 @@ export function AuthTemplateEditor({
           <input
             type="text"
             value={authValue(a)}
-            placeholder="Paste token or credential"
+            placeholder={tr('authPastePlaceholder')}
             className="data-input font-mono w-full bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800"
             onChange={(e) => onChange(setAuthValue(a, e.target.value))}
           />
@@ -76,12 +78,12 @@ export function AuthTemplateEditor({
   )
 }
 
-function authLabel(t: AuthType): string {
-  if (t === 'bearer') return 'Bearer Token'
-  if (t === 'apikey') return 'API Key'
-  if (t === 'basic') return 'Basic Auth'
-  if (t === 'oauth2') return 'OAuth 2.0'
-  return 'No Auth'
+function authLabel(authType: AuthType, tr: (key: string) => string): string {
+  if (authType === 'bearer') return tr('bearerToken')
+  if (authType === 'apikey') return tr('apiKey')
+  if (authType === 'basic') return tr('basicAuth')
+  if (authType === 'oauth2') return tr('oauth2')
+  return tr('noAuth')
 }
 
 function authValue(a: Auth): string {

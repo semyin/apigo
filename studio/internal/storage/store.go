@@ -21,6 +21,11 @@ func Open(dbPath string) (*Store, error) {
 		return nil, err
 	}
 
+	// SQLite has a single-writer locking model. Multiple pooled connections can easily
+	// trigger SQLITE_BUSY under concurrent UI actions, so we serialize DB access.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
 	// Best effort pragmas.
 	_, _ = db.Exec("PRAGMA journal_mode = WAL")
 	_, _ = db.Exec("PRAGMA busy_timeout = 5000")
@@ -91,4 +96,3 @@ func wrapErr(op string, err error) error {
 	}
 	return fmt.Errorf("%s: %w", op, err)
 }
-

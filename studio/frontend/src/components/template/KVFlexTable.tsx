@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { KV, KVType } from '../../api/types'
 import { emptyKV } from '../../lib/normalize'
@@ -22,6 +23,7 @@ export function KVFlexTable({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const shouldScrollToBottomRef = useRef(false)
   const dd = useDropdown()
+  const { t } = useTranslation()
 
   useEffect(() => {
     setDraft(emptyKV())
@@ -67,15 +69,15 @@ export function KVFlexTable({
       >
         <div className="w-8 flex-shrink-0" />
         <div className="w-[var(--w-key)] flex-shrink-0 px-2 relative group">
-          Key
+          {t('key')}
           <div className="resizer" onMouseDown={(e) => beginResizeCols(e, idPrefix, '--w-key')} />
         </div>
         <div className="w-[var(--w-val)] flex-shrink-0 px-2 relative group">
-          Value
+          {t('value')}
           <div className="resizer" onMouseDown={(e) => beginResizeCols(e, idPrefix, '--w-val')} />
         </div>
-        <div className="table-type-col px-2 table-divider-left">Type</div>
-        <div className="flex-1 px-2 table-divider-left">Description</div>
+        <div className="table-type-col px-2 table-divider-left">{t('type')}</div>
+        <div className="flex-1 px-2 table-divider-left">{t('description')}</div>
       </div>
 
       <div ref={containerRef} id={`${idPrefix}-container`} className="flex-1 min-h-0 overflow-y-auto pr-1">
@@ -180,7 +182,7 @@ export function KVFlexTable({
           <div className="w-[var(--w-key)] flex-shrink-0 px-1">
             <input
               type="text"
-              placeholder="Key"
+              placeholder={t('key')}
               value={draft.key}
               onChange={(e) => setDraft((p) => ({ ...p, key: e.target.value }))}
               onKeyDown={(e) => {
@@ -192,7 +194,7 @@ export function KVFlexTable({
           <div className="w-[var(--w-val)] flex-shrink-0 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
             <input
               type="text"
-              placeholder="Value"
+              placeholder={t('value')}
               value={draft.value}
               onChange={(e) => setDraft((p) => ({ ...p, value: e.target.value }))}
               onKeyDown={(e) => {
@@ -241,7 +243,7 @@ export function KVFlexTable({
           <div className="flex-1 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
             <input
               type="text"
-              placeholder="Description"
+              placeholder={t('description')}
               value={draft.description}
               onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
               onKeyDown={(e) => {

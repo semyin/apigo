@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 
 import type { Body } from '../../api/types'
 import { useDropdown } from './DropdownContext'
@@ -10,6 +11,7 @@ export function BodyTemplateEditor({
   body: Body | undefined
   onChange: (body: Body) => void
 }) {
+  const { t } = useTranslation()
   const b: Body = body ?? { type: 'none' }
   const isRaw = b.type !== 'none'
   const formatLabel = b.type === 'text' ? 'Text' : 'JSON'
@@ -93,7 +95,7 @@ export function BodyTemplateEditor({
             if (b.type === 'text') onChange({ ...b, type: 'text', text: v })
             else onChange({ ...b, type: 'json', jsonText: v })
           }}
-          placeholder={isRaw ? '' : 'No body'}
+          placeholder={isRaw ? '' : t('noBody')}
           disabled={!isRaw}
         />
       </div>

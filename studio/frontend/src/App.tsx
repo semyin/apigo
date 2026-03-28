@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { backend } from './api/backend'
 import type { BootstrapData, Environment, HistoryItem, KV, KVType, Request, SendResult, Settings } from './api/types'
@@ -32,6 +33,7 @@ type SidebarContextMenu = {
 export default function App() {
   const toast = useToast()
   const dd = useDropdown()
+  const { t } = useTranslation()
 
   const [settings, setSettings] = useState<Settings | null>(null)
   const [themePref, setThemePref] = useState<Theme>('system')
@@ -396,7 +398,7 @@ export default function App() {
 
     const ok = await saveNow()
     if (ok) {
-      toast.show('Saved', 'success')
+      toast.show(t('saved'), 'success')
       void refreshTree()
     }
   }
@@ -415,9 +417,9 @@ export default function App() {
 
     if (selectedRequestId && dirty && settings?.autoSave === false) {
       setConfirmDialog({
-        title: 'Unsaved changes',
-        message: 'Save changes before closing all tabs?',
-        confirmLabel: 'Save & Close',
+        title: t('unsavedChangesTitle'),
+        message: t('unsavedChangesCloseAll'),
+        confirmLabel: t('saveAndClose'),
         danger: false,
         onConfirm: async () => {
           await saveNow()
@@ -477,9 +479,9 @@ export default function App() {
 
     if (targetRequestId !== selectedRequestId && dirty && settings?.autoSave === false) {
       setConfirmDialog({
-        title: 'Unsaved changes',
-        message: 'Save changes before closing other tabs?',
-        confirmLabel: 'Save & Close Others',
+        title: t('unsavedChangesTitle'),
+        message: t('unsavedChangesCloseOthers'),
+        confirmLabel: t('saveAndCloseOthers'),
         danger: false,
         onConfirm: async () => {
           const ok = await saveNow()
@@ -530,15 +532,15 @@ export default function App() {
     dd.close()
     setCtxMenu(null)
     setConfirmDialog({
-      title: 'Delete history',
-      message: 'Delete this history record? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: t('deleteHistoryTitle'),
+      message: t('deleteHistoryMessage'),
+      confirmLabel: t('delete'),
       danger: true,
       onConfirm: async () => {
         setErrorMsg('')
         await backend.deleteHistory(historyId)
         await refreshHistory()
-        toast.show('Deleted', 'success')
+        toast.show(t('deleted'), 'success')
       },
     })
   }
@@ -606,13 +608,13 @@ export default function App() {
     if (parentId) {
       const d = findNodeDepth(tree, parentId)
       if (d >= 4) {
-        toast.show('Max folder depth is 4', 'error')
+        toast.show(t('maxFolderDepthIs4'), 'error')
         return
       }
     }
 
     setNewFolderParentId(parentId)
-    setNewFolderName('New Folder')
+    setNewFolderName(t('newFolder'))
     setNewFolderOpen(true)
   }
 
@@ -620,7 +622,7 @@ export default function App() {
     if (!activeProjectId) return
     const name = newFolderName.trim()
     if (!name) {
-      toast.show('Name is required', 'error')
+      toast.show(t('nameRequired'), 'error')
       return
     }
 
@@ -628,7 +630,7 @@ export default function App() {
     if (parentId) {
       const d = findNodeDepth(tree, parentId)
       if (d >= 4) {
-        toast.show('Max folder depth is 4', 'error')
+        toast.show(t('maxFolderDepthIs4'), 'error')
         return
       }
     }
@@ -641,7 +643,7 @@ export default function App() {
       setNewFolderParentId(null)
       if (parentId) setCollapsed((p) => ({ ...p, [parentId]: false }))
       await refreshTree()
-      toast.show('Folder created', 'success')
+      toast.show(t('folderCreated'), 'success')
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
     } finally {
@@ -654,7 +656,7 @@ export default function App() {
     const name = renameValue.trim()
     if (!nodeId) return
     if (!name) {
-      toast.show('Name is required', 'error')
+      toast.show(t('nameRequired'), 'error')
       return
     }
 
@@ -665,7 +667,7 @@ export default function App() {
       setRenameNodeId(null)
       setCtxMenu(null)
       await refreshTree()
-      toast.show('Renamed', 'success')
+      toast.show(t('renamed'), 'success')
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
     }
@@ -675,9 +677,9 @@ export default function App() {
     if (!nodeId) return
     dd.close()
     setConfirmDialog({
-      title: 'Delete',
-      message: 'Delete this item? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: t('deleteTitle'),
+      message: t('deleteMessage'),
+      confirmLabel: t('delete'),
       danger: true,
       onConfirm: async () => {
         setErrorMsg('')
@@ -687,7 +689,7 @@ export default function App() {
         await refreshHistory()
         // If the current selection was deleted (or was inside a deleted folder), pick the first remaining request.
         if (selectedRequestId && findNodeWithParentByRequestId(nextTree, selectedRequestId)) {
-          toast.show('Deleted', 'success')
+          toast.show(t('deleted'), 'success')
           return
         }
         const first = findFirstRequestId(nextTree)
@@ -699,7 +701,7 @@ export default function App() {
           setDirty(false)
           setOpenTabs([])
         }
-        toast.show('Deleted', 'success')
+        toast.show(t('deleted'), 'success')
       },
     })
   }
@@ -708,7 +710,7 @@ export default function App() {
     if (!activeProjectId) return
     setErrorMsg('')
     try {
-      const created = await backend.createRequest(activeProjectId, folderNodeId, 'New Request')
+      const created = await backend.createRequest(activeProjectId, folderNodeId, t('newRequest'))
       setCtxMenu(null)
       const nextTree = await refreshTree()
       setCollapsed((p) => ({ ...p, [folderNodeId]: false }))
@@ -740,7 +742,7 @@ export default function App() {
       setReq(normalizeRequest(created.request))
       setDirty(false)
       setResponse(null)
-      toast.show('Duplicated', 'success')
+      toast.show(t('duplicated'), 'success')
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
     }
@@ -754,7 +756,7 @@ export default function App() {
     try {
       const parentId =
         selectedRequestId ? findNodeWithParentByRequestId(tree, selectedRequestId)?.parentId ?? null : null
-      const created = await backend.createRequest(activeProjectId, parentId, 'New Request')
+      const created = await backend.createRequest(activeProjectId, parentId, t('newRequest'))
       if (parentId) setCollapsed((p) => ({ ...p, [parentId]: false }))
       const nextTree = await refreshTree()
       setSelectedRequestId(created.request.id)
@@ -799,9 +801,9 @@ export default function App() {
 
     if (requestId === selectedRequestId && dirty && settings?.autoSave === false) {
       setConfirmDialog({
-        title: 'Unsaved changes',
-        message: 'Save changes before closing this tab?',
-        confirmLabel: 'Save & Close',
+        title: t('unsavedChangesTitle'),
+        message: t('unsavedChangesCloseTab'),
+        confirmLabel: t('saveAndClose'),
         danger: false,
         onConfirm: async () => {
           await saveNow()
@@ -820,7 +822,7 @@ export default function App() {
     setCtxMenu(null)
     setSaveDialogMode(mode)
     const found = findNodeWithParentByNodeId(tree, req.nodeId)
-    const baseName = found?.node.name ?? 'New Request'
+    const baseName = found?.node.name ?? t('newRequest')
     setSaveName(mode === 'saveAs' ? `${baseName} Copy` : baseName)
     setSaveParentId(found?.parentId ?? null)
     setSaveDialogOpen(true)
@@ -842,7 +844,7 @@ export default function App() {
     if (!req) return
     const name = saveName.trim()
     if (!name) {
-      toast.show('Name is required', 'error')
+      toast.show(t('nameRequired'), 'error')
       return
     }
     if (!activeProjectId) return
@@ -874,7 +876,7 @@ export default function App() {
         setReq(copy)
         setDirty(false)
         setResponse(null)
-        toast.show('Saved as new request', 'success')
+        toast.show(t('savedAsNewRequest'), 'success')
       } else {
         const found = findNodeWithParentByNodeId(tree, req.nodeId)
         if (!found) {
@@ -885,7 +887,7 @@ export default function App() {
           setSaveDialogOpen(false)
           if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
           await refreshTree()
-          toast.show('Saved', 'success')
+          toast.show(t('saved'), 'success')
           return
         }
         const currentName = found?.node.name ?? ''
@@ -898,7 +900,7 @@ export default function App() {
         setSaveDialogOpen(false)
         if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
         await refreshTree()
-        toast.show('Saved', 'success')
+        toast.show(t('saved'), 'success')
       }
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
@@ -1024,8 +1026,35 @@ export default function App() {
     try {
       if (settingsDraft) await backend.saveSettings(settingsDraft)
       if (envDrafts) {
-        const saved = await Promise.all(envDrafts.map((e) => backend.saveEnv(e)))
+        if (!envDrafts.length) {
+          toast.show(t('atLeastOneEnvironment'), 'error')
+          return
+        }
+
+        const prevIds = envs.map((e) => e.id)
+        const nextIds = envDrafts.map((e) => e.id)
+        const deletedIds = prevIds.filter((id) => !nextIds.includes(id))
+
+        for (const id of deletedIds) {
+          await backend.deleteEnv(id)
+        }
+
+        const saved: Environment[] = []
+        for (const e of envDrafts) {
+          saved.push(await backend.saveEnv(e))
+        }
         setEnvs(saved)
+
+        // If the active environment was deleted (or missing), select the first remaining.
+        if (activeProjectId && saved.length && !saved.some((e) => e.id === activeEnvId)) {
+          const nextActive = saved[0].id
+          setActiveEnvId(nextActive)
+          try {
+            await backend.setActiveEnv(activeProjectId, nextActive)
+          } catch {
+            // Non-fatal.
+          }
+        }
       }
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
@@ -1044,6 +1073,46 @@ export default function App() {
       applyThemeClass(resolved)
       i18n.changeLanguage(settingsDraft.language)
     }
+  }
+
+  function addEnvironmentDraft() {
+    if (!activeProjectId) return
+    const c = (globalThis as any).crypto
+    const id = c?.randomUUID ? c.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+    setEnvDrafts((prev) => {
+      const base = (prev ?? displayEnvs).map((x) => ({ ...x, vars: { ...(x.vars ?? {}) } }))
+      base.push({
+        id,
+        projectId: activeProjectId,
+        name: t('newEnvironment'),
+        baseUrl: '',
+        vars: {},
+        updatedAt: Date.now(),
+      })
+      return base
+    })
+  }
+
+  function requestDeleteEnvironmentDraft(envId: string) {
+    dd.close()
+    setCtxMenu(null)
+    setConfirmDialog({
+      title: t('deleteEnvironmentTitle'),
+      message: t('deleteEnvironmentMessage'),
+      confirmLabel: t('delete'),
+      danger: true,
+      onConfirm: () => {
+        setEnvDrafts((prev) => {
+          const base = (prev ?? displayEnvs).map((x) => ({ ...x, vars: { ...(x.vars ?? {}) } }))
+          if (base.length <= 1) {
+            toast.show(t('atLeastOneEnvironment'), 'error')
+            return base
+          }
+          return base.filter((x) => x.id !== envId)
+        })
+      },
+    })
   }
 
   const filteredTree = useMemo(() => {
@@ -1072,7 +1141,7 @@ export default function App() {
             <i className="fa-solid fa-magnifying-glass text-gray-400 text-[11px] mr-2" />
             <input
               type="text"
-              placeholder="Search..."
+              placeholder={t('searchPlaceholder')}
               className="bg-transparent w-full placeholder-gray-400 text-gray-800 dark:text-gray-200"
               value={sidebarFilter}
               onChange={(e) => setSidebarFilter(e.target.value)}
@@ -1116,7 +1185,7 @@ export default function App() {
             >
               <div className="flex items-center font-medium">
                 <i className="fa-solid fa-clock-rotate-left mr-2 text-[12px] text-gray-400" />
-                History <span className="ml-2 text-[11px] text-gray-400">{history.length}</span>
+                {t('history')} <span className="ml-2 text-[11px] text-gray-400">{history.length}</span>
               </div>
               <i
                 className={clsx(
@@ -1163,7 +1232,7 @@ export default function App() {
                         >
                           {methodShort(h.method)}
                         </span>
-                        <span className="truncate text-[12px]">{h.requestName || 'Request'}</span>
+                        <span className="truncate text-[12px]">{h.requestName || t('request')}</span>
                         <span
                           className={clsx(
                             'ml-auto pl-2 font-mono text-[10px] shrink-0',
@@ -1175,7 +1244,7 @@ export default function App() {
                       </button>
                     ))
                   ) : (
-                    <div className="px-2 py-2 text-[12px] text-gray-400">No history yet.</div>
+                    <div className="px-2 py-2 text-[12px] text-gray-400">{t('noHistoryYet')}</div>
                   )}
                 </div>
               </div>
@@ -1200,7 +1269,7 @@ export default function App() {
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={() => openNewFolderDialog(null)}
             >
-              <i className="fa-regular fa-folder mr-2 text-[11px] text-gray-400" /> New Folder
+              <i className="fa-regular fa-folder mr-2 text-[11px] text-gray-400" /> {t('newFolder')}
             </button>
           </>
         ) : ctxMenu?.kind === 'folder' && ctxMenu.nodeId ? (
@@ -1210,28 +1279,28 @@ export default function App() {
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={() => openNewFolderDialog(ctxMenu.nodeId)}
             >
-              <i className="fa-solid fa-folder-plus mr-2 text-[11px] text-gray-400" /> New Folder
+              <i className="fa-solid fa-folder-plus mr-2 text-[11px] text-gray-400" /> {t('newFolder')}
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={() => addRequestUnderFolder(ctxMenu.nodeId!)}
             >
-              <i className="fa-solid fa-plus mr-2 text-[11px] text-gray-400" /> New Request
+              <i className="fa-solid fa-plus mr-2 text-[11px] text-gray-400" /> {t('newRequest')}
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={() => openRenameDialog(ctxMenu.nodeId!)}
             >
-              <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> Rename
+              <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> {t('rename')}
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
               onClick={() => deleteNodeById(ctxMenu.nodeId!)}
             >
-              <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
+              <i className="fa-solid fa-trash mr-2 text-[11px]" /> {t('delete')}
             </button>
           </>
         ) : ctxMenu?.kind === 'request' && ctxMenu.nodeId ? (
@@ -1241,21 +1310,21 @@ export default function App() {
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={() => duplicateRequestById(ctxMenu.requestId ?? '')}
             >
-              <i className="fa-solid fa-copy mr-2 text-[11px] text-gray-400" /> Duplicate
+              <i className="fa-solid fa-copy mr-2 text-[11px] text-gray-400" /> {t('duplicate')}
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={() => openRenameDialog(ctxMenu.nodeId!)}
             >
-              <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> Rename
+              <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> {t('rename')}
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
               onClick={() => deleteNodeById(ctxMenu.nodeId!)}
             >
-              <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
+              <i className="fa-solid fa-trash mr-2 text-[11px]" /> {t('delete')}
             </button>
           </>
         ) : ctxMenu?.kind === 'history' && ctxMenu.historyId ? (
@@ -1265,7 +1334,7 @@ export default function App() {
               className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
               onClick={() => deleteHistoryById(ctxMenu.historyId!)}
             >
-              <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
+              <i className="fa-solid fa-trash mr-2 text-[11px]" /> {t('delete')}
             </button>
           </>
         ) : ctxMenu?.kind === 'tab' && ctxMenu.requestId ? (
@@ -1275,7 +1344,7 @@ export default function App() {
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
               onClick={closeAllTabs}
             >
-              <i className="fa-solid fa-rectangle-xmark mr-2 text-[11px] text-gray-400" /> Close All
+              <i className="fa-solid fa-rectangle-xmark mr-2 text-[11px] text-gray-400" /> {t('closeAll')}
             </button>
             <button
               type="button"
@@ -1284,7 +1353,7 @@ export default function App() {
                 void closeSavedTabs()
               }}
             >
-              <i className="fa-solid fa-check mr-2 text-[11px] text-gray-400" /> Close Saved
+              <i className="fa-solid fa-check mr-2 text-[11px] text-gray-400" /> {t('closeSaved')}
             </button>
             <button
               type="button"
@@ -1293,7 +1362,7 @@ export default function App() {
                 void closeOtherTabs(ctxMenu.requestId!)
               }}
             >
-              <i className="fa-solid fa-clone mr-2 text-[11px] text-gray-400" /> Close Others
+              <i className="fa-solid fa-clone mr-2 text-[11px] text-gray-400" /> {t('closeOthers')}
             </button>
           </>
         ) : null}
@@ -1301,21 +1370,27 @@ export default function App() {
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1e1e1e] transition-colors duration-200">
         <header className="h-[46px] border-b border-ui-border dark:border-ui-borderDark flex items-center justify-between px-4 bg-white dark:bg-surface-900 z-20">
-          <div id="dd-env" className="flex items-center space-x-2 relative">
+          <div id="dd-env" className="flex items-center gap-2 relative min-w-0">
             <button
               id="envDropdownBtn"
-              className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-surface-100 dark:bg-surface-800 px-2.5 py-1 rounded cursor-pointer transition-colors font-medium"
+              className={clsx(
+                'flex items-center min-w-0 max-w-[280px]',
+                'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white',
+                'bg-surface-100 dark:bg-surface-800 px-2.5 py-1 rounded cursor-pointer transition-colors font-medium'
+              )}
               onClick={() => dd.toggle('dd-env')}
               type="button"
+              title={activeEnv?.name || 'Development'}
             >
               <div className={clsx('w-2 h-2 rounded-full mr-2', envToneDot(activeEnv?.name || ''))} />
-              {activeEnv?.name || 'Development'}
+              <span className="min-w-0 truncate">{activeEnv?.name || 'Development'}</span>
               <i className="fa-solid fa-chevron-down ml-2 text-[10px] opacity-50" />
             </button>
             <div
               id="envDropdownMenu"
               className={clsx(
-                'absolute top-9 left-0 w-full bg-white dark:bg-surface-800 border border-ui-border dark:border-ui-borderDark rounded-md shadow-float dark:shadow-floatDark py-1 z-50',
+                'absolute top-9 left-0 bg-white dark:bg-surface-800 border border-ui-border dark:border-ui-borderDark rounded-md shadow-float dark:shadow-floatDark py-1 z-50',
+                'min-w-full w-max max-w-[360px] max-h-[260px] overflow-x-hidden overflow-y-auto',
                 dd.isOpen('dd-env') ? '' : 'hidden'
               )}
             >
@@ -1327,8 +1402,10 @@ export default function App() {
                     dd.close()
                     changeActiveEnv(e.id)
                   }}
+                  title={e.name}
                 >
-                  <div className={clsx('w-2 h-2 rounded-full mr-2', envToneDot(e.name))} /> {e.name}
+                  <div className={clsx('w-2 h-2 rounded-full mr-2 shrink-0', envToneDot(e.name))} />
+                  <span className="min-w-0 truncate">{e.name}</span>
                 </div>
               ))}
             </div>
@@ -1359,7 +1436,7 @@ export default function App() {
                 setSettingsOpen(true)
               }}
               type="button"
-              title="Preferences"
+              title={t('preferences')}
             >
               <i className="fa-solid fa-gear text-[14px]" />
             </button>
@@ -1376,7 +1453,7 @@ export default function App() {
             >
               {openTabs.map((id) => {
                 const hit = findNodeWithParentByRequestId(tree, id)
-                const name = hit?.node.name ?? 'New Request'
+                const name = hit?.node.name ?? t('newRequest')
                 const method = (hit?.node.method || (id === selectedRequestId ? req?.method : '') || 'GET').toUpperCase()
                 const active = id === selectedRequestId
                 return (
@@ -1429,7 +1506,7 @@ export default function App() {
               className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-50 dark:bg-surface-800/40 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-gray-600 dark:text-gray-200 shrink-0"
               onClick={addRequestFromTabs}
               disabled={!activeProjectId}
-              title="New request"
+              title={t('newRequest')}
             >
               <i className="fa-solid fa-plus text-[12px]" />
             </button>
@@ -1483,7 +1560,7 @@ export default function App() {
                   if (!req) return
                   updateReq((r) => applyUrlTextToRequest(r, urlText, activeEnv))
                 }}
-                placeholder="Enter request URL"
+                placeholder={t('enterRequestUrl')}
                 className="flex-1 min-w-0 bg-transparent px-3 text-gray-900 dark:text-gray-100 font-mono text-[13px]"
                 disabled={!req}
               />
@@ -1498,7 +1575,7 @@ export default function App() {
               disabled={!req || sending}
               type="button"
             >
-              <i className="fa-solid fa-paper-plane mr-1.5 text-[12px] opacity-90" /> Send
+              <i className="fa-solid fa-paper-plane mr-1.5 text-[12px] opacity-90" /> {t('send')}
             </button>
 
             {/* Save split button: Save / Save As */}
@@ -1512,7 +1589,7 @@ export default function App() {
                 disabled={!req || saving}
                 type="button"
               >
-                <i className="fa-regular fa-floppy-disk mr-1.5 text-[12px] opacity-70" /> Save
+                <i className="fa-regular fa-floppy-disk mr-1.5 text-[12px] opacity-70" /> {t('save')}
               </button>
               <button
                 className={clsx(
@@ -1544,7 +1621,7 @@ export default function App() {
                     void saveFromToolbar()
                   }}
                 >
-                  <i className="fa-regular fa-floppy-disk mr-2 text-[11px] text-gray-400" /> Save
+                  <i className="fa-regular fa-floppy-disk mr-2 text-[11px] text-gray-400" /> {t('save')}
                 </button>
                 <button
                   type="button"
@@ -1554,7 +1631,7 @@ export default function App() {
                     openSaveDialog('saveAs')
                   }}
                 >
-                  <i className="fa-solid fa-copy mr-2 text-[11px] text-gray-400" /> Save As
+                  <i className="fa-solid fa-copy mr-2 text-[11px] text-gray-400" /> {t('saveAs')}
                 </button>
               </div>
             </div>
@@ -1580,7 +1657,7 @@ export default function App() {
                   )}
                   onClick={() => setReqTab('params')}
                 >
-                  Params
+                  {t('params')}
                 </button>
                 <button
                   type="button"
@@ -1592,7 +1669,7 @@ export default function App() {
                   )}
                   onClick={() => setReqTab('headers')}
                 >
-                  Headers{' '}
+                  {t('headers')}{' '}
                   <span className="ml-1 text-[11px] px-1.5 py-0.5 rounded-full bg-surface-100 dark:bg-surface-800 text-gray-500">
                     {req?.headers?.length ?? 0}
                   </span>
@@ -1607,7 +1684,7 @@ export default function App() {
                   )}
                   onClick={() => setReqTab('body')}
                 >
-                  Body
+                  {t('body')}
                 </button>
                 <button
                   type="button"
@@ -1619,7 +1696,7 @@ export default function App() {
                   )}
                   onClick={() => setReqTab('auth')}
                 >
-                  Auth
+                  {t('auth')}
                 </button>
               </div>
             </div>
@@ -1703,7 +1780,7 @@ export default function App() {
                   )}
                   onClick={() => setResTab('body')}
                 >
-                  Response
+                  {t('response')}
                 </button>
                 <button
                   type="button"
@@ -1715,7 +1792,8 @@ export default function App() {
                   )}
                   onClick={() => setResTab('headers')}
                 >
-                  Headers <span className="ml-1 text-[11px] text-gray-400">{headerCount(response?.headers)}</span>
+                  {t('resHeaders')}{' '}
+                  <span className="ml-1 text-[11px] text-gray-400">{headerCount(response?.headers)}</span>
                 </button>
                 <button
                   type="button"
@@ -1727,7 +1805,8 @@ export default function App() {
                   )}
                   onClick={() => setResTab('cookies')}
                 >
-                  Cookies <span className="ml-1 text-[11px] text-gray-400">{cookieCount(response?.headers)}</span>
+                  {t('cookies')}{' '}
+                  <span className="ml-1 text-[11px] text-gray-400">{cookieCount(response?.headers)}</span>
                 </button>
               </div>
 
@@ -1735,19 +1814,19 @@ export default function App() {
                 {response?.ok ? (
                   <>
                     <span className="text-gray-500 dark:text-gray-400">
-                      Status:{' '}
+                      {t('status')}: {' '}
                       <span className={clsx(statusToneClass(response.status), 'font-semibold ml-1')}>
                         {response.statusText || String(response.status)}
                       </span>
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
-                      Time:{' '}
+                      {t('time')}: {' '}
                       <span className={clsx(statusToneClass(response.status), 'font-semibold ml-1')}>
                         {response.durationMs} ms
                       </span>
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
-                      Size:{' '}
+                      {t('size')}: {' '}
                       <span className={clsx(statusToneClass(response.status), 'font-semibold ml-1')}>
                         {formatBytes(response.sizeBytes)}
                       </span>
@@ -1759,9 +1838,11 @@ export default function App() {
 
             <div className="flex-1 min-h-0 overflow-y-auto p-4 relative group">
               {!response ? (
-                <div className="text-[12px] text-gray-500 dark:text-gray-400">No response yet.</div>
+                <div className="text-[12px] text-gray-500 dark:text-gray-400">{t('noResponseYet')}</div>
               ) : !response.ok ? (
-                <div className="text-[12px] text-red-600 dark:text-red-300">{response.error || 'Request failed.'}</div>
+                <div className="text-[12px] text-red-600 dark:text-red-300">
+                  {response.error || t('requestFailed')}
+                </div>
               ) : (
                 <>
                   <div id="res-body" className={clsx('res-tab-content h-full', resTab === 'body' ? 'block' : 'hidden')}>
@@ -1769,10 +1850,10 @@ export default function App() {
                       <button
                         type="button"
                         className="w-6 h-6 rounded bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-500 dark:text-gray-300 flex items-center justify-center border border-ui-border dark:border-ui-borderDark"
-                        title="Copy"
+                        title={t('copy')}
                         onClick={() => {
-                          copyToClipboard(response.body ?? '')
-                          toast.show('Copied to clipboard', 'success')
+                           copyToClipboard(response.body ?? '')
+                          toast.show(t('copiedToClipboard'), 'success')
                         }}
                       >
                         <i className="fa-regular fa-copy text-[11px]" />
@@ -1811,9 +1892,9 @@ export default function App() {
           }
         }}
       >
-        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">Rename</h2>
+          <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('rename')}</h2>
             <button
               className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
               onClick={() => {
@@ -1829,7 +1910,7 @@ export default function App() {
 
           <div className="p-5">
             <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-              Name
+              {t('name')}
             </label>
             <input
               ref={renameInputRef}
@@ -1840,7 +1921,7 @@ export default function App() {
                 if (e.key === 'Enter') confirmRename()
               }}
               className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-              placeholder="Enter a name"
+              placeholder={t('enterName')}
             />
           </div>
 
@@ -1853,14 +1934,14 @@ export default function App() {
               }}
               type="button"
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               className="px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium"
               type="button"
               onClick={confirmRename}
             >
-              Rename
+              {t('rename')}
             </button>
           </div>
         </div>
@@ -1879,7 +1960,7 @@ export default function App() {
         <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-lg rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-visible">
           <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
             <h2 className="font-semibold text-gray-800 dark:text-gray-100">
-              {saveDialogMode === 'saveAs' ? 'Save As' : 'Save Request'}
+              {saveDialogMode === 'saveAs' ? t('saveAs') : t('saveRequest')}
             </h2>
             <button
               className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
@@ -1894,7 +1975,7 @@ export default function App() {
           <div className="p-5 space-y-4">
             <div>
               <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                Name
+                {t('name')}
               </label>
               <input
                 ref={saveNameInputRef}
@@ -1905,13 +1986,13 @@ export default function App() {
                   if (e.key === 'Enter') confirmSaveDialog()
                 }}
                 className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-                placeholder="Enter a name"
+                placeholder={t('enterName')}
               />
             </div>
 
             <div>
               <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                Location
+                {t('location')}
               </label>
               <div id="dd-save-parent" className="relative">
                 <button
@@ -1923,8 +2004,8 @@ export default function App() {
                   <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" />
                   <span className="truncate">
                     {saveParentId
-                      ? folderOptions.find((f) => f.id === saveParentId)?.name ?? 'Folder'
-                      : 'Root'}
+                      ? folderOptions.find((f) => f.id === saveParentId)?.name ?? t('folder')
+                      : t('root')}
                   </span>
                   <i
                     className={clsx(
@@ -1947,7 +2028,7 @@ export default function App() {
                       setSaveParentId(null)
                     }}
                   >
-                    <i className="fa-solid fa-layer-group mr-2 text-[11px] text-gray-400" /> Root
+                    <i className="fa-solid fa-layer-group mr-2 text-[11px] text-gray-400" /> {t('root')}
                   </button>
                   {folderOptions.map((f) => (
                     <button
@@ -1975,7 +2056,7 @@ export default function App() {
               type="button"
               disabled={saveBusy}
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               className={clsx(
@@ -1986,7 +2067,7 @@ export default function App() {
               onClick={confirmSaveDialog}
               disabled={saveBusy}
             >
-              {saveDialogMode === 'saveAs' ? 'Save As' : 'Save'}
+              {saveDialogMode === 'saveAs' ? t('saveAs') : t('save')}
             </button>
           </div>
         </div>
@@ -2006,13 +2087,13 @@ export default function App() {
           }
         }}
       >
-        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">New Folder</h2>
-            <button
-              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-              onClick={() => {
-                if (newFolderBusy) return
+          <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+              <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('newFolder')}</h2>
+              <button
+                className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+                onClick={() => {
+                  if (newFolderBusy) return
                 setNewFolderOpen(false)
                 setNewFolderParentId(null)
               }}
@@ -2026,7 +2107,7 @@ export default function App() {
           <div className="p-5 space-y-3">
             <div>
               <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                Name
+                {t('name')}
               </label>
               <input
                 ref={newFolderNameInputRef}
@@ -2037,18 +2118,18 @@ export default function App() {
                   if (e.key === 'Enter') confirmNewFolder()
                 }}
                 className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-                placeholder="Enter a folder name"
+                placeholder={t('enterName')}
                 disabled={newFolderBusy}
               />
             </div>
 
             <div className="text-[12px] text-gray-500 dark:text-gray-400 flex items-center">
               <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" />
-              Location:{' '}
+              {t('location')}: {' '}
               <span className="ml-1 truncate">
                 {newFolderParentId
-                  ? folderOptions.find((f) => f.id === newFolderParentId)?.name ?? 'Folder'
-                  : 'Root'}
+                  ? folderOptions.find((f) => f.id === newFolderParentId)?.name ?? t('folder')
+                  : t('root')}
               </span>
             </div>
           </div>
@@ -2064,7 +2145,7 @@ export default function App() {
               type="button"
               disabled={newFolderBusy}
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               className={clsx(
@@ -2075,7 +2156,7 @@ export default function App() {
               onClick={confirmNewFolder}
               disabled={newFolderBusy}
             >
-              Create
+              {t('create')}
             </button>
           </div>
         </div>
@@ -2094,7 +2175,9 @@ export default function App() {
       >
         <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
           <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">{confirmDialog?.title ?? 'Confirm'}</h2>
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">
+              {confirmDialog?.title ?? t('confirm')}
+            </h2>
             <button
               className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
               onClick={() => {
@@ -2119,7 +2202,7 @@ export default function App() {
               type="button"
               disabled={confirmBusy}
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               className={clsx(
@@ -2142,7 +2225,7 @@ export default function App() {
                 }
               }}
             >
-              {confirmDialog?.confirmLabel ?? 'Confirm'}
+              {confirmDialog?.confirmLabel ?? t('confirm')}
             </button>
           </div>
         </div>
@@ -2168,7 +2251,7 @@ export default function App() {
           className="bg-white dark:bg-[#1e1e1e] w-full max-w-2xl rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden transform scale-100 transition-transform duration-200"
         >
           <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">Preferences</h2>
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('preferences')}</h2>
             <button
               id="closeSettingsBtn"
               className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
@@ -2186,23 +2269,23 @@ export default function App() {
 
           <div className="flex min-h-0">
             <div className="w-52 border-r border-ui-border dark:border-ui-borderDark p-4 bg-surface-50 dark:bg-surface-900">
-              <div className="flex flex-col space-y-1">
-                <div className="px-3 py-1.5 text-ui-primary font-medium bg-ui-primary/10 rounded-md cursor-pointer text-[13px]">
-                  General
-                </div>
-                <div className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">
-                  Appearance
-                </div>
-                <div className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">
+                <div className="flex flex-col space-y-1">
+                  <div className="px-3 py-1.5 text-ui-primary font-medium bg-ui-primary/10 rounded-md cursor-pointer text-[13px]">
+                  {t('general')}
+                  </div>
+                  <div className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">
+                  {t('appearance')}
+                  </div>
+                  <div className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">
                   Data
+                  </div>
                 </div>
-              </div>
             </div>
 
             <div className="flex-1 p-6 overflow-y-auto">
               <div className="mb-5">
                 <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                  Request Timeout (ms)
+                  {t('timeout')}
                 </label>
                 <input
                   type="number"
@@ -2219,7 +2302,9 @@ export default function App() {
               </div>
 
               <div className="mb-5">
-                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">Theme</label>
+                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+                  {t('theme')}
+                </label>
                 <select
                   value={settingsDraft?.theme ?? settings?.theme ?? 'system'}
                   onChange={(e) =>
@@ -2238,7 +2323,9 @@ export default function App() {
               </div>
 
               <div className="mb-5">
-                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">Language</label>
+                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+                  {t('language')}
+                </label>
                 <select
                   value={settingsDraft?.language ?? settings?.language ?? 'zh'}
                   onChange={(e) =>
@@ -2256,15 +2343,41 @@ export default function App() {
               </div>
 
               <div className="mb-5">
-                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                  Environments
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-gray-700 dark:text-gray-300 font-medium text-[12px]">
+                    {t('environments')}
+                  </label>
+                  <button
+                    type="button"
+                    className="h-7 px-2.5 rounded-md border border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-[12px] font-medium text-gray-700 dark:text-gray-200"
+                    onClick={addEnvironmentDraft}
+                    disabled={!activeProjectId}
+                    title={t('addEnvironment')}
+                  >
+                    <i className="fa-solid fa-plus mr-1.5 text-[10px] text-gray-400" />
+                    {t('addEnvironment')}
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {(envDrafts ?? displayEnvs).map((e) => (
                     <div key={e.id} className="flex items-center gap-2">
-                      <div className="w-36 shrink-0 flex items-center text-[12px] text-gray-700 dark:text-gray-200 font-medium">
-                        <span className={clsx('w-2 h-2 rounded-full mr-2', envToneDot(e.name))} />
-                        <span className="truncate">{e.name}</span>
+                      <div className="w-36 shrink-0 flex items-center gap-2">
+                        <span className={clsx('w-2 h-2 rounded-full', envToneDot(e.name))} />
+                        <input
+                          type="text"
+                          value={e.name ?? ''}
+                          onChange={(ev) => {
+                            const v = ev.target.value
+                            setEnvDrafts((prev) => {
+                              const base = (prev ?? displayEnvs).map((x) => ({ ...x, vars: { ...(x.vars ?? {}) } }))
+                              const i = base.findIndex((x) => x.id === e.id)
+                              if (i >= 0) base[i] = { ...base[i], name: v }
+                              return base
+                            })
+                          }}
+                          placeholder={t('envName')}
+                          className="w-full min-w-0 bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-2.5 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none text-[12px] font-medium"
+                        />
                       </div>
                       <input
                         type="text"
@@ -2278,15 +2391,29 @@ export default function App() {
                             return base
                           })
                         }}
-                        placeholder="Base URL (optional)"
+                        placeholder={t('baseUrlOptional')}
                         className="flex-1 min-w-0 bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none font-mono text-[12px]"
                       />
+                      <button
+                        type="button"
+                        className={clsx(
+                          'w-9 h-9 rounded-md border border-ui-border dark:border-ui-borderDark flex items-center justify-center transition-colors',
+                          (envDrafts ?? displayEnvs).length <= 1
+                            ? 'opacity-50 cursor-not-allowed bg-surface-50 dark:bg-surface-900 text-gray-400'
+                            : 'bg-surface-50 dark:bg-surface-900 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 dark:text-red-400'
+                        )}
+                        onClick={() => requestDeleteEnvironmentDraft(e.id)}
+                        disabled={(envDrafts ?? displayEnvs).length <= 1}
+                        title={t('delete')}
+                        aria-label={t('delete')}
+                      >
+                        <i className="fa-solid fa-trash text-[12px]" />
+                      </button>
                     </div>
                   ))}
                 </div>
                 <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
-                  Base URL is optional. When set, requests can use relative paths and will be joined with the active
-                  environment base URL.
+                  {t('baseUrlHelp')}
                 </div>
               </div>
 
@@ -2308,7 +2435,7 @@ export default function App() {
                     <i className="fa-solid fa-check absolute text-white text-[10px] opacity-0 peer-checked:opacity-100 pointer-events-none" />
                   </div>
                   <span className="text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
-                    Auto-save requests
+                    {t('autoSave')}
                   </span>
                 </label>
               </div>
@@ -2319,7 +2446,7 @@ export default function App() {
                   className="px-3 py-1.5 border border-ui-border dark:border-ui-borderDark rounded-md hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors font-medium"
                   onClick={importPostman}
                 >
-                  Import Postman
+                  {t('importPostman')}
                 </button>
                 <button
                   type="button"
@@ -2327,7 +2454,7 @@ export default function App() {
                   onClick={exportPostman}
                   disabled={!activeProjectId}
                 >
-                  Export Postman
+                  {t('exportPostman')}
                 </button>
                 <button
                   type="button"
@@ -2335,7 +2462,7 @@ export default function App() {
                   onClick={exportOpenAPI}
                   disabled={!activeProjectId}
                 >
-                  Export OpenAPI
+                  {t('exportOpenapi')}
                 </button>
               </div>
 
@@ -2354,14 +2481,14 @@ export default function App() {
               }}
               type="button"
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               className="px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium"
               type="button"
               onClick={saveSettingsDraft}
             >
-              Save Changes
+              {t('saveChanges')}
             </button>
           </div>
         </div>
