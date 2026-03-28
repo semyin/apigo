@@ -19,8 +19,80 @@ func (s *Store) EnsureSeed(ctx context.Context) (projectID string, requestID str
 	}
 	if len(projects) > 0 {
 		projectID = projects[0].ID
+
+		// Ensure template-like default envs exist even if the user DB was created before we added seed envs.
+		envs, err := s.ListEnvs(ctx, projectID)
+		if err != nil {
+			return "", "", err
+		}
+		if len(envs) == 0 {
+			now := s.Now()
+			envDevID := uuid.NewString()
+			envStagingID := uuid.NewString()
+			envProdID := uuid.NewString()
+			devEnv := Environment{
+				ID:        envDevID,
+				ProjectID: projectID,
+				Name:      "Development",
+				BaseURL:   "https://api.example.com",
+				Vars: map[string]string{
+					"access_token": "",
+					"TOKEN":        "",
+					"API_KEY":      "",
+				},
+				UpdatedAt: now,
+			}
+			stagingEnv := Environment{
+				ID:        envStagingID,
+				ProjectID: projectID,
+				Name:      "Staging",
+				BaseURL:   "https://staging.api.example.com",
+				Vars:      map[string]string{},
+				UpdatedAt: now,
+			}
+			prodEnv := Environment{
+				ID:        envProdID,
+				ProjectID: projectID,
+				Name:      "Production",
+				BaseURL:   "https://api.example.com",
+				Vars:      map[string]string{},
+				UpdatedAt: now,
+			}
+
+			err = s.WithTx(ctx, func(tx *sql.Tx) error {
+				for _, e := range []Environment{devEnv, stagingEnv, prodEnv} {
+					_, err := tx.ExecContext(ctx, `INSERT INTO environments(id,project_id,name,base_url,vars_json,updated_at) VALUES(?,?,?,?,?,?)`,
+						e.ID, e.ProjectID, e.Name, e.BaseURL, mustJSON(e.Vars), e.UpdatedAt,
+					)
+					if err != nil {
+						return wrapErr("insert environment", err)
+					}
+				}
+				_, err := tx.ExecContext(ctx, `UPDATE projects SET active_env_id=?, updated_at=? WHERE id=?`, envDevID, now, projectID)
+				return err
+			})
+			if err != nil {
+				return "", "", err
+			}
+		} else {
+			// If active env is invalid (e.g. deleted), set it to the first available.
+			if _, err := s.GetActiveEnv(ctx, projectID); err != nil {
+				_ = s.SetActiveEnv(ctx, projectID, envs[0].ID)
+			}
+		}
+
 		requestID, _ = s.firstRequestID(ctx, projectID)
 		if requestID != "" {
+			// If the existing DB was created before the template headers were added, upgrade the demo request
+			// so the Headers tab matches the static template and isn't mostly empty.
+			if req, err := s.GetRequest(ctx, requestID); err == nil {
+				var nodeName string
+				_ = s.db.QueryRowContext(ctx, `SELECT name FROM nodes WHERE id=?`, req.NodeID).Scan(&nodeName)
+				if nodeName == "List Users" && len(req.Headers) <= 1 {
+					req.Headers = defaultTemplateHeaders()
+					_ = s.SaveRequest(ctx, req)
+				}
+			}
 			return projectID, requestID, nil
 		}
 		// Project exists but no request yet, ensure at least one request.
@@ -55,8 +127,9 @@ func (s *Store) EnsureSeed(ctx context.Context) (projectID string, requestID str
 		Name:      "Development",
 		BaseURL:   "https://api.example.com",
 		Vars: map[string]string{
-			"TOKEN": "",
-			"API_KEY": "",
+			"access_token": "",
+			"TOKEN":        "",
+			"API_KEY":      "",
 		},
 		UpdatedAt: now,
 	}
@@ -88,9 +161,7 @@ func (s *Store) EnsureSeed(ctx context.Context) (projectID string, requestID str
 			{Enabled: true, Key: "page", Value: "1", Type: KVTypeInteger, Description: "Page number"},
 			{Enabled: true, Key: "limit", Value: "10", Type: KVTypeInteger, Description: ""},
 		},
-		Headers: []KV{
-			{Enabled: true, Key: "Accept", Value: "application/json", Type: KVTypeString, Description: ""},
-		},
+		Headers: defaultTemplateHeaders(),
 		Body: Body{Type: BodyTypeNone},
 		Auth: Auth{Type: AuthTypeBearer, BearerToken: "{{TOKEN}}"},
 		Description: "",
@@ -104,9 +175,7 @@ func (s *Store) EnsureSeed(ctx context.Context) (projectID string, requestID str
 		URLFull: "https://api.example.com/v1/users",
 		Path:    "",
 		QueryParams: []KV{},
-		Headers: []KV{
-			{Enabled: true, Key: "Content-Type", Value: "application/json", Type: KVTypeString, Description: ""},
-		},
+		Headers: append(defaultTemplateHeaders(), KV{Enabled: true, Key: "Content-Type", Value: "application/json", Type: KVTypeString, Description: "Request body format"}),
 		Body: Body{Type: BodyTypeJSON, JSONText: "{\n  \"username\": \"admin_fox\"\n}"},
 		Auth: Auth{Type: AuthTypeBearer, BearerToken: "{{TOKEN}}"},
 		Description: "",
@@ -120,7 +189,7 @@ func (s *Store) EnsureSeed(ctx context.Context) (projectID string, requestID str
 		URLFull: "https://api.example.com/v1/users/{{id}}",
 		Path:    "",
 		QueryParams: []KV{},
-		Headers: []KV{},
+		Headers: defaultTemplateHeaders(),
 		Body:    Body{Type: BodyTypeNone},
 		Auth:    Auth{Type: AuthTypeBearer, BearerToken: "{{TOKEN}}"},
 		Description: "",
@@ -482,7 +551,7 @@ func (s *Store) CreateRequest(ctx context.Context, projectID string, parentID *s
 		URLFull:     "",
 		Path:        "",
 		QueryParams: []KV{},
-		Headers:     []KV{},
+		Headers:     defaultTemplateHeaders(),
 		Body:        Body{Type: BodyTypeNone},
 		Auth:        Auth{Type: AuthTypeNone},
 		Description: "",
@@ -513,6 +582,25 @@ func (s *Store) CreateRequest(ctx context.Context, projectID string, parentID *s
 
 func (s *Store) RenameNode(ctx context.Context, nodeID, name string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE nodes SET name=?, updated_at=? WHERE id=?`, name, s.Now(), nodeID)
+	return err
+}
+
+func (s *Store) MoveNode(ctx context.Context, nodeID string, parentID *string) error {
+	if parentID != nil && *parentID == nodeID {
+		return errors.New("cannot move node into itself")
+	}
+
+	var projectID string
+	err := s.db.QueryRowContext(ctx, `SELECT project_id FROM nodes WHERE id=?`, nodeID).Scan(&projectID)
+	if err != nil {
+		return err
+	}
+	sortIndex, err := s.nextSortIndex(ctx, projectID, parentID)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `UPDATE nodes SET parent_id=?, sort_index=?, updated_at=? WHERE id=?`, parentID, sortIndex, s.Now(), nodeID)
 	return err
 }
 
@@ -719,4 +807,16 @@ func (s *Store) DuplicateRequest(ctx context.Context, requestID string) (Node, R
 		return Node{}, Request{}, err
 	}
 	return newNode, newReq, nil
+}
+
+func defaultTemplateHeaders() []KV {
+	// Mirror the static HTML template so the default Headers tab isn't mostly empty.
+	return []KV{
+		{Enabled: true, Key: "Accept", Value: "application/json", Type: KVTypeString, Description: "Prefer JSON responses"},
+		{Enabled: true, Key: "Authorization", Value: "Bearer {{access_token}}", Type: KVTypeString, Description: "Workspace auth token"},
+		{Enabled: true, Key: "X-Trace-Id", Value: "req-20260327-9af1", Type: KVTypeString, Description: "Correlate gateway logs"},
+		{Enabled: true, Key: "X-Client-Version", Value: "web-2.14.0", Type: KVTypeString, Description: "Client release marker"},
+		{Enabled: true, Key: "X-Locale", Value: "zh-CN", Type: KVTypeString, Description: "Localized content and formatting"},
+		{Enabled: true, Key: "Cache-Control", Value: "no-cache", Type: KVTypeString, Description: "Bypass intermediate caches"},
+	}
 }

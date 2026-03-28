@@ -1,7 +1,7 @@
 import clsx from 'clsx'
-import { useState } from 'react'
 
 import type { Auth, AuthType } from '../../api/types'
+import { useDropdown } from './DropdownContext'
 
 export function AuthTemplateEditor({
   auth,
@@ -11,7 +11,9 @@ export function AuthTemplateEditor({
   onChange: (auth: Auth) => void
 }) {
   const a: Auth = auth ?? { type: 'none' }
-  const [typeOpen, setTypeOpen] = useState(false)
+  const dd = useDropdown()
+  const ddId = 'dd-auth-type'
+  const typeOpen = dd.isOpen(ddId)
 
   return (
     <div className="flex flex-col text-[13px]">
@@ -22,11 +24,11 @@ export function AuthTemplateEditor({
 
       <div className="flex items-center border-b border-surface-100 dark:border-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-800/30 py-1">
         <div className="w-[220px] flex-shrink-0 px-1">
-          <div className="relative">
+          <div id={ddId} className="relative">
             <button
               type="button"
               className="data-input w-full flex items-center bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer"
-              onClick={() => setTypeOpen((v) => !v)}
+              onClick={() => dd.toggle(ddId)}
             >
               <span>{authLabel(a.type)}</span>
               <i
@@ -49,7 +51,7 @@ export function AuthTemplateEditor({
                   type="button"
                   className="custom-dropdown-item"
                   onClick={() => {
-                    setTypeOpen(false)
+                    dd.close()
                     onChange({ ...a, type: opt.value as AuthType })
                   }}
                 >
@@ -115,4 +117,3 @@ function setAuthValue(a: Auth, v: string): Auth {
       return a
   }
 }
-

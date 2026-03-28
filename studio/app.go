@@ -186,6 +186,13 @@ func (a *App) RenameNode(nodeID, name string) error {
 	return a.store.RenameNode(a.ctx, nodeID, name)
 }
 
+func (a *App) MoveNode(nodeID string, parentID *string) error {
+	if a.store == nil {
+		return errors.New("store not ready")
+	}
+	return a.store.MoveNode(a.ctx, nodeID, parentID)
+}
+
 func (a *App) DeleteNode(nodeID string) error {
 	if a.store == nil {
 		return errors.New("store not ready")

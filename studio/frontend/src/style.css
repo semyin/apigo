@@ -169,6 +169,15 @@ body.resizing-cols * {
   cursor: col-resize !important;
 }
 
+body.resizing-rows {
+  user-select: none;
+  cursor: row-resize !important;
+}
+
+body.resizing-rows * {
+  cursor: row-resize !important;
+}
+
 .table-type-col {
   width: var(--w-type);
   flex-shrink: 0;

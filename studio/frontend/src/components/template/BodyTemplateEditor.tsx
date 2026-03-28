@@ -1,7 +1,7 @@
 import clsx from 'clsx'
-import { useState } from 'react'
 
 import type { Body } from '../../api/types'
+import { useDropdown } from './DropdownContext'
 
 export function BodyTemplateEditor({
   body,
@@ -13,7 +13,9 @@ export function BodyTemplateEditor({
   const b: Body = body ?? { type: 'none' }
   const isRaw = b.type !== 'none'
   const formatLabel = b.type === 'text' ? 'Text' : 'JSON'
-  const [formatOpen, setFormatOpen] = useState(false)
+  const dd = useDropdown()
+  const ddId = 'dd-body-format'
+  const formatOpen = dd.isOpen(ddId)
 
   const value = b.type === 'text' ? b.text ?? '' : b.jsonText ?? ''
   const lines = Math.max(1, value.split('\n').length)
@@ -43,11 +45,11 @@ export function BodyTemplateEditor({
           raw
         </label>
         <div className="h-3 w-[1px] bg-ui-border dark:bg-ui-borderDark mx-1" />
-        <div className="relative">
+        <div id={ddId} className="relative">
           <button
             type="button"
             className="flex items-center text-ui-primary font-medium cursor-pointer transition-colors hover:text-ui-primaryHover"
-            onClick={() => setFormatOpen((v) => !v)}
+            onClick={() => dd.toggle(ddId)}
             disabled={!isRaw}
           >
             <span>{formatLabel}</span>
@@ -60,7 +62,7 @@ export function BodyTemplateEditor({
                 type="button"
                 className="custom-dropdown-item"
                 onClick={() => {
-                  setFormatOpen(false)
+                  dd.close()
                   if (opt === 'Text') onChange({ ...b, type: 'text', text: value })
                   else onChange({ ...b, type: 'json', jsonText: value })
                 }}
@@ -93,4 +95,3 @@ export function BodyTemplateEditor({
     </div>
   )
 }
-

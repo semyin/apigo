@@ -1,12 +1,14 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { backend } from './api/backend'
 import type { BootstrapData, Environment, KV, KVType, Request, SendResult, Settings } from './api/types'
 import { TreeView } from './components/TreeView'
+import { useToast } from './components/ToastProvider'
 import { AuthTemplateEditor } from './components/template/AuthTemplateEditor'
 import { BodyTemplateEditor } from './components/template/BodyTemplateEditor'
 import { CookiesTemplateView, cookieCount } from './components/template/CookiesTemplateView'
+import { useDropdown } from './components/template/DropdownContext'
 import { HeadersTemplateView } from './components/template/HeadersTemplateView'
 import { KVFlexTable } from './components/template/KVFlexTable'
 import { copyToClipboard, headerCount, renderBodyAsHtml } from './components/template/responseFormat'
@@ -17,7 +19,19 @@ import { i18n } from './i18n'
 type ReqTab = 'params' | 'headers' | 'body' | 'auth'
 type ResTab = 'body' | 'headers' | 'cookies'
 
+type SidebarContextKind = 'folder' | 'request'
+type SidebarContextMenu = {
+  kind: SidebarContextKind
+  nodeId: string
+  requestId?: string
+  left: number
+  top: number
+}
+
 export default function App() {
+  const toast = useToast()
+  const dd = useDropdown()
+
   const [settings, setSettings] = useState<Settings | null>(null)
   const [themePref, setThemePref] = useState<Theme>('system')
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark')
@@ -44,41 +58,101 @@ export default function App() {
 
   const urlInputRef = useRef<HTMLInputElement | null>(null)
   const [urlText, setUrlText] = useState('')
-  const [envMenuOpen, setEnvMenuOpen] = useState(false)
-  const [methodMenuOpen, setMethodMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsDraft, setSettingsDraft] = useState<Settings | null>(null)
 
   const [sidebarFilter, setSidebarFilter] = useState('')
+
+  const [ctxMenu, setCtxMenu] = useState<SidebarContextMenu | null>(null)
+  const ctxMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameNodeId, setRenameNodeId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [saveParentId, setSaveParentId] = useState<string | null>(null)
+  const [saveBusy, setSaveBusy] = useState(false)
+  const saveNameInputRef = useRef<HTMLInputElement | null>(null)
+
+  const splitRootRef = useRef<HTMLDivElement | null>(null)
+  const upperPaneRef = useRef<HTMLDivElement | null>(null)
+  const [upperPx, setUpperPx] = useState<number | null>(null)
 
   const activeEnv = useMemo(
     () => envs.find((e) => e.id === activeEnvId) ?? null,
     [envs, activeEnvId]
   )
 
-  // Close floating menus on outside click.
+  const displayEnvs = useMemo(() => sortEnvsForDisplay(envs), [envs])
+
   useEffect(() => {
-    function onMouseDown(e: MouseEvent) {
-      const target = e.target as Node | null
-      if (!target) return
+    if (!renameOpen) return
+    requestAnimationFrame(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    })
+  }, [renameOpen])
 
-      if (envMenuOpen) {
-        const btn = document.getElementById('envDropdownBtn')
-        const menu = document.getElementById('envDropdownMenu')
-        if (btn && menu && !btn.contains(target) && !menu.contains(target)) {
-          setEnvMenuOpen(false)
-        }
-      }
+  useEffect(() => {
+    if (!saveDialogOpen) return
+    requestAnimationFrame(() => {
+      saveNameInputRef.current?.focus()
+      saveNameInputRef.current?.select()
+    })
+  }, [saveDialogOpen])
 
-      if (methodMenuOpen) {
-        const root = document.getElementById('methodDropdownRoot')
-        if (root && !root.contains(target)) setMethodMenuOpen(false)
-      }
+  useEffect(() => {
+    if (!ctxMenu) return
+    function close() {
+      setCtxMenu(null)
     }
 
+    function onMouseDown(e: MouseEvent) {
+      const el = ctxMenuRef.current
+      const target = e.target as Node | null
+      if (el && target && el.contains(target)) return
+      close()
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') close()
+    }
+
+    function onContextMenu(e: MouseEvent) {
+      const target = e.target as HTMLElement | null
+      if (target?.closest('#sidebarContextMenu')) return
+      if (target?.closest('[data-folder-row]') || target?.closest('[data-request-row]')) return
+      close()
+    }
+
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
     document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [envMenuOpen, methodMenuOpen])
+    document.addEventListener('contextmenu', onContextMenu)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('contextmenu', onContextMenu)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [ctxMenu])
+
+  useLayoutEffect(() => {
+    if (!ctxMenu) return
+    const el = ctxMenuRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const padding = 12
+    const left = Math.max(padding, Math.min(ctxMenu.left, window.innerWidth - rect.width - padding))
+    const top = Math.max(padding, Math.min(ctxMenu.top, window.innerHeight - rect.height - padding))
+    if (left === ctxMenu.left && top === ctxMenu.top) return
+    setCtxMenu((prev) => (prev ? { ...prev, left, top } : prev))
+  }, [ctxMenu?.kind, ctxMenu?.nodeId, ctxMenu?.left, ctxMenu?.top])
 
   useEffect(() => {
     let cancelled = false
@@ -238,6 +312,211 @@ export default function App() {
     }
   }
 
+  async function refreshTree() {
+    if (!activeProjectId) return []
+    const next = await backend.getTree(activeProjectId)
+    setTree(next)
+    return next
+  }
+
+  async function loadRequestInPlace(requestId: string) {
+    if (!requestId) return
+    const r = await backend.getRequest(requestId)
+    setSelectedRequestId(requestId)
+    setReq(normalizeRequest(r))
+    setDirty(false)
+    setResponse(null)
+  }
+
+  function openSidebarContextMenu(args: {
+    kind: SidebarContextKind
+    nodeId: string
+    requestId?: string
+    clientX: number
+    clientY: number
+  }) {
+    dd.close()
+    setCtxMenu({
+      kind: args.kind,
+      nodeId: args.nodeId,
+      requestId: args.requestId,
+      left: args.clientX,
+      top: args.clientY,
+    })
+  }
+
+  function openRenameDialog(nodeId: string) {
+    dd.close()
+    setCtxMenu(null)
+    const found = findNodeWithParentByNodeId(tree, nodeId)
+    setRenameNodeId(nodeId)
+    setRenameValue(found?.node.name ?? '')
+    setRenameOpen(true)
+  }
+
+  async function confirmRename() {
+    const nodeId = renameNodeId
+    const name = renameValue.trim()
+    if (!nodeId) return
+    if (!name) {
+      toast.show('Name is required', 'error')
+      return
+    }
+
+    setErrorMsg('')
+    try {
+      await backend.renameNode(nodeId, name)
+      setRenameOpen(false)
+      setRenameNodeId(null)
+      setCtxMenu(null)
+      await refreshTree()
+      toast.show('Renamed', 'success')
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    }
+  }
+
+  async function deleteNodeById(nodeId: string) {
+    if (!nodeId) return
+    if (!window.confirm('Delete this item?')) return
+
+    setErrorMsg('')
+    try {
+      await backend.deleteNode(nodeId)
+      setCtxMenu(null)
+      const nextTree = await refreshTree()
+      // If the current selection was deleted (or was inside a deleted folder), pick the first remaining request.
+      if (selectedRequestId && findNodeWithParentByRequestId(nextTree, selectedRequestId)) {
+        toast.show('Deleted', 'success')
+        return
+      }
+      const first = findFirstRequestId(nextTree)
+      if (first) await loadRequestInPlace(first)
+      else {
+        setSelectedRequestId('')
+        setReq(null)
+        setResponse(null)
+        setDirty(false)
+      }
+      toast.show('Deleted', 'success')
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    }
+  }
+
+  async function addRequestUnderFolder(folderNodeId: string) {
+    if (!activeProjectId) return
+    setErrorMsg('')
+    try {
+      const created = await backend.createRequest(activeProjectId, folderNodeId, 'New Request')
+      setCtxMenu(null)
+      const nextTree = await refreshTree()
+      setCollapsed((p) => ({ ...p, [folderNodeId]: false }))
+      setSelectedRequestId(created.request.id)
+      setReq(normalizeRequest(created.request))
+      setDirty(false)
+      setResponse(null)
+      setReqTab('params')
+      // Ensure the new request exists in tree (best-effort).
+      if (!findNodeWithParentByRequestId(nextTree, created.request.id)) {
+        await refreshTree()
+      }
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    }
+  }
+
+  async function duplicateRequestById(requestId: string) {
+    if (!activeProjectId) return
+    if (!requestId) return
+    setErrorMsg('')
+    try {
+      const created = await backend.duplicateRequest(requestId)
+      setCtxMenu(null)
+      await refreshTree()
+      setSelectedRequestId(created.request.id)
+      setReq(normalizeRequest(created.request))
+      setDirty(false)
+      setResponse(null)
+      toast.show('Duplicated', 'success')
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    }
+  }
+
+  function openSaveDialog() {
+    if (!req) return
+    dd.close()
+    setCtxMenu(null)
+    const found = findNodeWithParentByNodeId(tree, req.nodeId)
+    setSaveName(found?.node.name ?? 'New Request')
+    setSaveParentId(found?.parentId ?? null)
+    setSaveDialogOpen(true)
+  }
+
+  async function confirmSaveDialog() {
+    if (!req) return
+    const name = saveName.trim()
+    if (!name) {
+      toast.show('Name is required', 'error')
+      return
+    }
+    setErrorMsg('')
+    setSaveBusy(true)
+    const prepared = applyUrlTextToRequest(req, urlText, activeEnv)
+    try {
+      const found = findNodeWithParentByNodeId(tree, req.nodeId)
+      const currentName = found?.node.name ?? ''
+      const currentParent = found?.parentId ?? null
+      if (currentName && currentName !== name) await backend.renameNode(req.nodeId, name)
+      if (currentParent !== saveParentId) await backend.moveNode(req.nodeId, saveParentId)
+      await backend.saveRequest(prepared)
+      setReq(prepared)
+      setDirty(false)
+      setSaveDialogOpen(false)
+      if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
+      await refreshTree()
+      toast.show('Saved', 'success')
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    } finally {
+      setSaveBusy(false)
+    }
+  }
+
+  function beginResizeRows(e: ReactMouseEvent<HTMLDivElement>) {
+    const root = splitRootRef.current
+    const upper = upperPaneRef.current
+    if (!root || !upper) return
+
+    const startY = e.clientY
+    const rootRect = root.getBoundingClientRect()
+    const upperRect = upper.getBoundingClientRect()
+    const startUpper = upperRect.height
+    const minUpper = 150
+    const minLower = 150
+    const divider = 1
+    const maxUpper = Math.max(minUpper, rootRect.height - minLower - divider)
+
+    document.body.classList.add('resizing-rows')
+    e.preventDefault()
+
+    function onMove(ev: MouseEvent) {
+      const delta = ev.clientY - startY
+      const next = Math.max(minUpper, Math.min(startUpper + delta, maxUpper))
+      setUpperPx(next)
+    }
+
+    function onUp() {
+      document.body.classList.remove('resizing-rows')
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   async function changeTheme(next: Theme) {
     setThemePref(next)
     storeTheme(next)
@@ -342,6 +621,8 @@ export default function App() {
     return filterTree(tree, q)
   }, [tree, sidebarFilter])
 
+  const folderOptions = useMemo(() => flattenFolderOptions(tree), [tree])
+
   // TODO(template): render the template-matched UI here.
   return (
     <div className="h-screen w-screen bg-surface-50 dark:bg-surface-900 text-gray-800 dark:text-gray-300 flex overflow-hidden text-[13px] transition-colors duration-200">
@@ -372,25 +653,94 @@ export default function App() {
           <TreeView
             nodes={filteredTree}
             collapsed={collapsed}
-            onToggleFolder={(id) => setCollapsed((p) => ({ ...p, [id]: !(p[id] ?? false) }))}
+            onToggleFolder={(id) => {
+              setCtxMenu(null)
+              setCollapsed((p) => ({ ...p, [id]: !(p[id] ?? false) }))
+            }}
             selectedRequestId={selectedRequestId}
-            onSelectRequest={selectRequest}
+            onSelectRequest={(requestId) => {
+              setCtxMenu(null)
+              selectRequest(requestId)
+            }}
+            activeContextNodeId={ctxMenu?.nodeId}
+            onContextMenu={openSidebarContextMenu}
           />
         </div>
       </aside>
 
       <div
         id="sidebarContextMenu"
-        className="hidden fixed min-w-[172px] bg-white dark:bg-surface-800 border border-ui-border dark:border-ui-borderDark rounded-md shadow-float dark:shadow-floatDark py-1 z-[140]"
-      />
+        ref={ctxMenuRef}
+        className={clsx(
+          'fixed min-w-[172px] bg-white dark:bg-surface-800 border border-ui-border dark:border-ui-borderDark rounded-md shadow-float dark:shadow-floatDark py-1 z-[140]',
+          ctxMenu ? '' : 'hidden'
+        )}
+        style={ctxMenu ? { left: ctxMenu.left, top: ctxMenu.top } : undefined}
+      >
+        {ctxMenu?.kind === 'folder' ? (
+          <>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => addRequestUnderFolder(ctxMenu.nodeId)}
+            >
+              <i className="fa-solid fa-plus mr-2 text-[11px] text-gray-400" /> Add
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => {
+                setCtxMenu(null)
+                openRenameDialog(ctxMenu.nodeId)
+              }}
+            >
+              <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> Rename
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              onClick={() => deleteNodeById(ctxMenu.nodeId)}
+            >
+              <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
+            </button>
+          </>
+        ) : ctxMenu?.kind === 'request' ? (
+          <>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => duplicateRequestById(ctxMenu.requestId ?? '')}
+            >
+              <i className="fa-solid fa-copy mr-2 text-[11px] text-gray-400" /> Duplicate
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => {
+                setCtxMenu(null)
+                openRenameDialog(ctxMenu.nodeId)
+              }}
+            >
+              <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> Rename
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              onClick={() => deleteNodeById(ctxMenu.nodeId)}
+            >
+              <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
+            </button>
+          </>
+        ) : null}
+      </div>
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1e1e1e] transition-colors duration-200">
         <header className="h-[46px] border-b border-ui-border dark:border-ui-borderDark flex items-center justify-between px-4 bg-white dark:bg-surface-900 z-20">
-          <div className="flex items-center space-x-2 relative">
+          <div id="dd-env" className="flex items-center space-x-2 relative">
             <button
               id="envDropdownBtn"
               className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-surface-100 dark:bg-surface-800 px-2.5 py-1 rounded cursor-pointer transition-colors font-medium"
-              onClick={() => setEnvMenuOpen((v) => !v)}
+              onClick={() => dd.toggle('dd-env')}
               type="button"
             >
               <div className={clsx('w-2 h-2 rounded-full mr-2', envToneDot(activeEnv?.name || ''))} />
@@ -401,15 +751,15 @@ export default function App() {
               id="envDropdownMenu"
               className={clsx(
                 'absolute top-9 left-0 w-full bg-white dark:bg-surface-800 border border-ui-border dark:border-ui-borderDark rounded-md shadow-float dark:shadow-floatDark py-1 z-50',
-                envMenuOpen ? '' : 'hidden'
+                dd.isOpen('dd-env') ? '' : 'hidden'
               )}
             >
-              {envs.map((e) => (
+              {displayEnvs.map((e) => (
                 <div
                   key={e.id}
                   className="px-3 py-1.5 hover:bg-surface-100 dark:hover:bg-surface-900 cursor-pointer flex items-center text-gray-800 dark:text-gray-200"
                   onClick={() => {
-                    setEnvMenuOpen(false)
+                    dd.close()
                     changeActiveEnv(e.id)
                   }}
                 >
@@ -433,6 +783,8 @@ export default function App() {
               id="settingsBtn"
               className="w-7 h-7 flex items-center justify-center rounded text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
               onClick={() => {
+                dd.close()
+                setCtxMenu(null)
                 setSettingsDraft(
                   settings
                     ? { ...settings }
@@ -452,11 +804,11 @@ export default function App() {
           <div className="flex items-stretch gap-2">
             <div className="flex flex-1 items-stretch border border-ui-border dark:border-ui-borderDark rounded-md shadow-subtle focus-within:border-ui-primary dark:focus-within:border-ui-primary focus-within:ring-2 focus-within:ring-ui-primary/20 transition-all bg-white dark:bg-surface-800/50 h-[38px] min-w-0">
               <div className="relative flex items-center border-r border-ui-border dark:border-ui-borderDark rounded-l-md px-1">
-                <div id="methodDropdownRoot" className="relative">
+                <div id="dd-method" className="relative">
                   <button
                     type="button"
                     className="flex items-center w-[104px] h-[30px] px-3 rounded cursor-pointer transition-colors hover:bg-surface-100 dark:hover:bg-surface-800"
-                    onClick={() => setMethodMenuOpen((v) => !v)}
+                    onClick={() => dd.toggle('dd-method')}
                     disabled={!req}
                   >
                     <span className={clsx(methodToneClass(req?.method || 'GET'), 'font-mono font-bold')}>
@@ -465,18 +817,18 @@ export default function App() {
                     <i
                       className={clsx(
                         'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
-                        methodMenuOpen ? 'rotate-180' : ''
+                        dd.isOpen('dd-method') ? 'rotate-180' : ''
                       )}
                     />
                   </button>
-                  <div className={clsx('custom-dropdown-menu w-full', methodMenuOpen ? '' : 'hidden')}>
+                  <div className={clsx('custom-dropdown-menu w-full', dd.isOpen('dd-method') ? '' : 'hidden')}>
                     {(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const).map((m) => (
                       <button
                         key={m}
                         type="button"
                         className="custom-dropdown-item"
                         onClick={() => {
-                          setMethodMenuOpen(false)
+                          dd.close()
                           updateReq((r) => ({ ...r, method: m }))
                         }}
                       >
@@ -519,7 +871,7 @@ export default function App() {
                 'h-[38px] shrink-0 border border-ui-border dark:border-ui-borderDark bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-700 dark:text-gray-200 font-medium px-4 transition-colors flex items-center rounded-md',
                 saving ? 'opacity-70 cursor-not-allowed' : ''
               )}
-              onClick={saveNow}
+              onClick={openSaveDialog}
               disabled={!req || saving}
               type="button"
             >
@@ -528,9 +880,13 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div ref={splitRootRef} className="flex-1 flex flex-col overflow-hidden">
           {/* Upper: request config */}
-          <div className="flex-1 flex flex-col min-h-[150px]">
+          <div
+            ref={upperPaneRef}
+            className="flex-1 flex flex-col min-h-[150px]"
+            style={upperPx != null ? { flex: '0 0 auto', height: upperPx } : undefined}
+          >
             <div className="flex px-4 border-b border-ui-border dark:border-ui-borderDark bg-white dark:bg-[#1e1e1e]">
               <div className="flex space-x-6 relative">
                 <button
@@ -645,7 +1001,10 @@ export default function App() {
           </div>
 
           {/* Divider */}
-          <div className="h-[1px] bg-ui-border dark:bg-ui-borderDark relative cursor-row-resize hover:bg-ui-primary dark:hover:bg-ui-primary transition-colors z-10">
+          <div
+            className="h-[1px] bg-ui-border dark:bg-ui-borderDark relative cursor-row-resize hover:bg-ui-primary dark:hover:bg-ui-primary transition-colors z-10"
+            onMouseDown={beginResizeRows}
+          >
             <div className="absolute -top-1 -bottom-1 left-0 right-0" />
           </div>
 
@@ -730,7 +1089,10 @@ export default function App() {
                         type="button"
                         className="w-6 h-6 rounded bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-500 dark:text-gray-300 flex items-center justify-center border border-ui-border dark:border-ui-borderDark"
                         title="Copy"
-                        onClick={() => copyToClipboard(response.body ?? '')}
+                        onClick={() => {
+                          copyToClipboard(response.body ?? '')
+                          toast.show('Copied to clipboard', 'success')
+                        }}
                       >
                         <i className="fa-regular fa-copy text-[11px]" />
                       </button>
@@ -755,11 +1117,203 @@ export default function App() {
         </div>
       </main>
 
+      {/* Rename modal */}
+      <div
+        className={clsx(
+          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
+          renameOpen ? 'flex opacity-100' : 'hidden opacity-0'
+        )}
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) {
+            setRenameOpen(false)
+            setRenameNodeId(null)
+          }
+        }}
+      >
+        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">Rename</h2>
+            <button
+              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+              onClick={() => {
+                setRenameOpen(false)
+                setRenameNodeId(null)
+              }}
+              type="button"
+              title="Close"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          </div>
+
+          <div className="p-5">
+            <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+              Name
+            </label>
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmRename()
+              }}
+              className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
+              placeholder="Enter a name"
+            />
+          </div>
+
+          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
+            <button
+              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
+              onClick={() => {
+                setRenameOpen(false)
+                setRenameNodeId(null)
+              }}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium"
+              type="button"
+              onClick={confirmRename}
+            >
+              Rename
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Save modal */}
+      <div
+        className={clsx(
+          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
+          saveDialogOpen ? 'flex opacity-100' : 'hidden opacity-0'
+        )}
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setSaveDialogOpen(false)
+        }}
+      >
+        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-lg rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">Save Request</h2>
+            <button
+              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+              onClick={() => setSaveDialogOpen(false)}
+              type="button"
+              title="Close"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+                Name
+              </label>
+              <input
+                ref={saveNameInputRef}
+                type="text"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmSaveDialog()
+                }}
+                className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
+                placeholder="Enter a name"
+              />
+            </div>
+
+            <div>
+              <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+                Location
+              </label>
+              <div id="dd-save-parent" className="relative">
+                <button
+                  type="button"
+                  className="w-full flex items-center bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors cursor-pointer"
+                  onClick={() => dd.toggle('dd-save-parent')}
+                  disabled={saveBusy}
+                >
+                  <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" />
+                  <span className="truncate">
+                    {saveParentId
+                      ? folderOptions.find((f) => f.id === saveParentId)?.name ?? 'Folder'
+                      : 'Root'}
+                  </span>
+                  <i
+                    className={clsx(
+                      'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
+                      dd.isOpen('dd-save-parent') ? 'rotate-180' : ''
+                    )}
+                  />
+                </button>
+                <div
+                  className={clsx(
+                    'custom-dropdown-menu w-full max-h-[260px] overflow-auto',
+                    dd.isOpen('dd-save-parent') ? '' : 'hidden'
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="custom-dropdown-item"
+                    onClick={() => {
+                      dd.close()
+                      setSaveParentId(null)
+                    }}
+                  >
+                    <i className="fa-solid fa-layer-group mr-2 text-[11px] text-gray-400" /> Root
+                  </button>
+                  {folderOptions.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className="custom-dropdown-item"
+                      style={{ paddingLeft: 12 + f.depth * 12 }}
+                      onClick={() => {
+                        dd.close()
+                        setSaveParentId(f.id)
+                      }}
+                    >
+                      <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" /> {f.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
+            <button
+              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
+              onClick={() => setSaveDialogOpen(false)}
+              type="button"
+              disabled={saveBusy}
+            >
+              Cancel
+            </button>
+            <button
+              className={clsx(
+                'px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium',
+                saveBusy ? 'opacity-70 cursor-not-allowed' : ''
+              )}
+              type="button"
+              onClick={confirmSaveDialog}
+              disabled={saveBusy}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Settings modal (template-inspired) */}
       <div
         id="settingsModalOverlay"
         className={clsx(
-          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-200',
+          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
           settingsOpen ? 'flex opacity-100' : 'hidden opacity-0'
         )}
         onMouseDown={(e) => {
@@ -1061,4 +1615,83 @@ function filterTree(nodes: BootstrapData['tree'], q: string): BootstrapData['tre
     if (nameHit || kids.length) out.push({ ...n, children: kids })
   }
   return out
+}
+
+function sortEnvsForDisplay(envs: Environment[]): Environment[] {
+  function rank(name: string): number {
+    const n = (name || '').toLowerCase()
+    if (n.includes('dev')) return 0
+    if (n.includes('stag')) return 1
+    if (n.includes('prod')) return 2
+    return 100
+  }
+  return envs
+    .slice()
+    .sort((a, b) => rank(a.name) - rank(b.name) || (a.name || '').localeCompare(b.name || ''))
+}
+
+type FolderOption = { id: string; name: string; depth: number }
+
+function flattenFolderOptions(nodes: BootstrapData['tree']): FolderOption[] {
+  const out: FolderOption[] = []
+  function walk(list: BootstrapData['tree'], depth: number) {
+    for (const n of list) {
+      if (n.type !== 'folder') continue
+      out.push({ id: n.id, name: n.name, depth })
+      if (n.children?.length) walk(n.children, depth + 1)
+    }
+  }
+  walk(nodes, 0)
+  return out
+}
+
+function findNodeWithParentByNodeId(
+  nodes: BootstrapData['tree'],
+  nodeId: string
+): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
+  function walk(
+    list: BootstrapData['tree'],
+    parentId: string | null
+  ): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
+    for (const n of list) {
+      if (n.id === nodeId) return { node: n, parentId }
+      if (n.type === 'folder' && n.children?.length) {
+        const hit = walk(n.children, n.id)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+  return walk(nodes, null)
+}
+
+function findNodeWithParentByRequestId(
+  nodes: BootstrapData['tree'],
+  requestId: string
+): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
+  function walk(
+    list: BootstrapData['tree'],
+    parentId: string | null
+  ): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
+    for (const n of list) {
+      if (n.type === 'request' && n.requestId === requestId) return { node: n, parentId }
+      if (n.type === 'folder' && n.children?.length) {
+        const hit = walk(n.children, n.id)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+  return walk(nodes, null)
+}
+
+function findFirstRequestId(nodes: BootstrapData['tree']): string {
+  for (const n of nodes) {
+    if (n.type === 'request' && n.requestId) return n.requestId
+    if (n.type === 'folder' && n.children?.length) {
+      const hit = findFirstRequestId(n.children)
+      if (hit) return hit
+    }
+  }
+  return ''
 }

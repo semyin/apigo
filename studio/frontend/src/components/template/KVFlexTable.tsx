@@ -1,7 +1,9 @@
+import clsx from 'clsx'
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 
 import type { KV, KVType } from '../../api/types'
 import { emptyKV } from '../../lib/normalize'
+import { useDropdown } from './DropdownContext'
 
 export function KVFlexTable({
   idPrefix,
@@ -17,6 +19,7 @@ export function KVFlexTable({
   const safeRows = rows ?? []
   const [draft, setDraft] = useState<KV>(() => emptyKV())
   const draftRef = useRef<HTMLDivElement | null>(null)
+  const dd = useDropdown()
 
   useEffect(() => {
     setDraft(emptyKV())
@@ -93,17 +96,41 @@ export function KVFlexTable({
               />
             </div>
             <div className="table-type-col px-1 table-divider-left">
-              <select
-                value={r.type}
-                onChange={(e) => setRow(i, { ...r, type: e.target.value as KVType })}
-                className="data-input custom-select w-full bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer"
-              >
-                {(['String', 'Integer', 'Number', 'Boolean', 'Array', 'Object'] as KVType[]).map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
+              <div id={`dd-${idPrefix}-type-${resetKey}-${i}`} className="relative">
+                <button
+                  type="button"
+                  className="data-input w-full flex items-center bg-transparent px-1.5 py-1 rounded text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer"
+                  onClick={() => dd.toggle(`dd-${idPrefix}-type-${resetKey}-${i}`)}
+                >
+                  <span>{r.type}</span>
+                  <i
+                    className={clsx(
+                      'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
+                      dd.isOpen(`dd-${idPrefix}-type-${resetKey}-${i}`) ? 'rotate-180' : ''
+                    )}
+                  />
+                </button>
+                <div
+                  className={clsx(
+                    'custom-dropdown-menu w-full',
+                    dd.isOpen(`dd-${idPrefix}-type-${resetKey}-${i}`) ? '' : 'hidden'
+                  )}
+                >
+                  {(['String', 'Integer', 'Number', 'Boolean', 'Array', 'Object'] as KVType[]).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className="custom-dropdown-item"
+                      onClick={() => {
+                        dd.close()
+                        setRow(i, { ...r, type: v })
+                      }}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="flex-1 flex items-center px-1 pr-2 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
               <input
@@ -162,17 +189,41 @@ export function KVFlexTable({
             />
           </div>
           <div className="table-type-col px-1 table-divider-left">
-            <select
-              value={draft.type}
-              onChange={(e) => setDraft((p) => ({ ...p, type: e.target.value as KVType }))}
-              className="data-input custom-select w-full bg-transparent px-1.5 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer"
-            >
-              {(['String', 'Integer', 'Number', 'Boolean', 'Array', 'Object'] as KVType[]).map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <div id={`dd-${idPrefix}-type-${resetKey}-draft`} className="relative">
+              <button
+                type="button"
+                className="data-input w-full flex items-center bg-transparent px-1.5 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer"
+                onClick={() => dd.toggle(`dd-${idPrefix}-type-${resetKey}-draft`)}
+              >
+                <span>{draft.type}</span>
+                <i
+                  className={clsx(
+                    'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
+                    dd.isOpen(`dd-${idPrefix}-type-${resetKey}-draft`) ? 'rotate-180' : ''
+                  )}
+                />
+              </button>
+              <div
+                className={clsx(
+                  'custom-dropdown-menu w-full',
+                  dd.isOpen(`dd-${idPrefix}-type-${resetKey}-draft`) ? '' : 'hidden'
+                )}
+              >
+                {(['String', 'Integer', 'Number', 'Boolean', 'Array', 'Object'] as KVType[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className="custom-dropdown-item"
+                    onClick={() => {
+                      dd.close()
+                      setDraft((p) => ({ ...p, type: v }))
+                    }}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="flex-1 px-1 relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[1px] before:bg-ui-border dark:before:bg-ui-borderDark">
             <input

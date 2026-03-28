@@ -35,6 +35,8 @@ export function ListEnvs(arg1:string):Promise<Array<storage.Environment>>;
 
 export function ListProjects():Promise<Array<storage.Project>>;
 
+export function MoveNode(arg1:string,arg2:any):Promise<void>;
+
 export function RenameNode(arg1:string,arg2:string):Promise<void>;
 
 export function SaveEnv(arg1:storage.Environment):Promise<storage.Environment>;

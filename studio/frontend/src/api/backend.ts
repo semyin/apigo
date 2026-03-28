@@ -34,6 +34,12 @@ export const backend = {
     parentId: string | null,
     name: string
   ): Promise<CreateRequestResult> => app().CreateRequest(projectId, parentId, name),
+  duplicateRequest: (requestId: string): Promise<CreateRequestResult> =>
+    app().DuplicateRequest(requestId),
+  renameNode: (nodeId: string, name: string): Promise<void> => app().RenameNode(nodeId, name),
+  moveNode: (nodeId: string, parentId: string | null): Promise<void> =>
+    app().MoveNode(nodeId, parentId),
+  deleteNode: (nodeId: string): Promise<void> => app().DeleteNode(nodeId),
 
   getRequest: (requestId: string): Promise<Request> => app().GetRequest(requestId),
   saveRequest: (req: Request): Promise<void> => app().SaveRequest(req),

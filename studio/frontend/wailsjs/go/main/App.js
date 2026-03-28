@@ -66,6 +66,10 @@ export function ListProjects() {
   return window['go']['main']['App']['ListProjects']();
 }
 
+export function MoveNode(arg1, arg2) {
+  return window['go']['main']['App']['MoveNode'](arg1, arg2);
+}
+
 export function RenameNode(arg1, arg2) {
   return window['go']['main']['App']['RenameNode'](arg1, arg2);
 }
