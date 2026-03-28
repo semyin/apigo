@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent 
 import { useTranslation } from 'react-i18next'
 
 import { backend } from './api/backend'
-import type { BootstrapData, Environment, HistoryItem, KV, KVType, Request, SendResult, Settings } from './api/types'
+import type { BootstrapData, Environment, HistoryItem, KV, Request, SendResult, Settings } from './api/types'
 import { TreeView } from './components/TreeView'
 import { useToast } from './components/ToastProvider'
 import { AuthTemplateEditor } from './components/template/AuthTemplateEditor'
@@ -15,7 +15,30 @@ import { KVFlexTable } from './components/template/KVFlexTable'
 import { copyToClipboard, headerCount, renderBodyAsHtml } from './components/template/responseFormat'
 import { applyThemeClass, getStoredTheme, resolveTheme, storeTheme, type Theme } from './lib/theme'
 import { formatBytes, normalizeRequest } from './lib/normalize'
+import {
+  applyUrlTextToRequest,
+  computeBaseURL,
+  computeDisplayURL,
+  envToneDot,
+  filterTree,
+  fingerprintURL,
+  flattenFolderOptions,
+  findFirstRequestId,
+  findNodeDepth,
+  findNodeWithParentByNodeId,
+  findNodeWithParentByRequestId,
+  methodShort,
+  methodToneClass,
+  methodToneDotClass,
+  sortEnvsForDisplay,
+  statusToneClass,
+} from './lib/studioUtils'
 import { i18n } from './i18n'
+import { RenameDialog } from './components/studio/RenameDialog'
+import { SaveRequestDialog } from './components/studio/SaveRequestDialog'
+import { NewFolderDialog } from './components/studio/NewFolderDialog'
+import { ConfirmDialog } from './components/studio/ConfirmDialog'
+import { SettingsDialog } from './components/studio/SettingsDialog'
 
 type ReqTab = 'params' | 'headers' | 'body' | 'auth'
 type ResTab = 'body' | 'headers' | 'cookies'
@@ -1115,6 +1138,19 @@ export default function App() {
     })
   }
 
+  async function runConfirmDialog() {
+    if (!confirmDialog) return
+    setConfirmBusy(true)
+    try {
+      await confirmDialog.onConfirm()
+      setConfirmDialog(null)
+    } catch (err: any) {
+      toast.show(String(err?.message ?? err), 'error')
+    } finally {
+      setConfirmBusy(false)
+    }
+  }
+
   const filteredTree = useMemo(() => {
     const q = sidebarFilter.trim().toLowerCase()
     if (!q) return tree
@@ -1879,927 +1915,77 @@ export default function App() {
         </div>
       </main>
 
-      {/* Rename modal */}
-      <div
-        className={clsx(
-          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
-          renameOpen ? 'flex opacity-100' : 'hidden opacity-0'
-        )}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) {
-            setRenameOpen(false)
-            setRenameNodeId(null)
-          }
+      <RenameDialog
+        open={renameOpen}
+        value={renameValue}
+        inputRef={renameInputRef}
+        t={t}
+        onChange={setRenameValue}
+        onClose={() => {
+          setRenameOpen(false)
+          setRenameNodeId(null)
         }}
-      >
-          <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('rename')}</h2>
-            <button
-              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-              onClick={() => {
-                setRenameOpen(false)
-                setRenameNodeId(null)
-              }}
-              type="button"
-              title="Close"
-            >
-              <i className="fa-solid fa-xmark" />
-            </button>
-          </div>
+        onConfirm={confirmRename}
+      />
 
-          <div className="p-5">
-            <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-              {t('name')}
-            </label>
-            <input
-              ref={renameInputRef}
-              type="text"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') confirmRename()
-              }}
-              className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-              placeholder={t('enterName')}
-            />
-          </div>
+      <SaveRequestDialog
+        open={saveDialogOpen}
+        mode={saveDialogMode}
+        busy={saveBusy}
+        name={saveName}
+        parentId={saveParentId}
+        folderOptions={folderOptions}
+        nameInputRef={saveNameInputRef}
+        dd={dd}
+        t={t}
+        onChangeName={setSaveName}
+        onChangeParentId={setSaveParentId}
+        onClose={() => setSaveDialogOpen(false)}
+        onConfirm={confirmSaveDialog}
+      />
 
-          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
-            <button
-              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
-              onClick={() => {
-                setRenameOpen(false)
-                setRenameNodeId(null)
-              }}
-              type="button"
-            >
-              {t('cancel')}
-            </button>
-            <button
-              className="px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium"
-              type="button"
-              onClick={confirmRename}
-            >
-              {t('rename')}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Save modal */}
-      <div
-        className={clsx(
-          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
-          saveDialogOpen ? 'flex opacity-100' : 'hidden opacity-0'
-        )}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) setSaveDialogOpen(false)
+      <NewFolderDialog
+        open={newFolderOpen}
+        busy={newFolderBusy}
+        name={newFolderName}
+        locationLabel={
+          newFolderParentId ? folderOptions.find((f) => f.id === newFolderParentId)?.name ?? t('folder') : t('root')
+        }
+        inputRef={newFolderNameInputRef}
+        t={t}
+        onChangeName={setNewFolderName}
+        onClose={() => {
+          setNewFolderOpen(false)
+          setNewFolderParentId(null)
         }}
-      >
-        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-lg rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-visible">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">
-              {saveDialogMode === 'saveAs' ? t('saveAs') : t('saveRequest')}
-            </h2>
-            <button
-              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-              onClick={() => setSaveDialogOpen(false)}
-              type="button"
-              title="Close"
-            >
-              <i className="fa-solid fa-xmark" />
-            </button>
-          </div>
+        onConfirm={confirmNewFolder}
+      />
 
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                {t('name')}
-              </label>
-              <input
-                ref={saveNameInputRef}
-                type="text"
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmSaveDialog()
-                }}
-                className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-                placeholder={t('enterName')}
-              />
-            </div>
+      <ConfirmDialog dialog={confirmDialog} busy={confirmBusy} t={t} onCancel={() => setConfirmDialog(null)} onConfirm={() => void runConfirmDialog()} />
 
-            <div>
-              <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                {t('location')}
-              </label>
-              <div id="dd-save-parent" className="relative">
-                <button
-                  type="button"
-                  className="w-full flex items-center bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors cursor-pointer"
-                  onClick={() => dd.toggle('dd-save-parent')}
-                  disabled={saveBusy}
-                >
-                  <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" />
-                  <span className="truncate">
-                    {saveParentId
-                      ? folderOptions.find((f) => f.id === saveParentId)?.name ?? t('folder')
-                      : t('root')}
-                  </span>
-                  <i
-                    className={clsx(
-                      'fa-solid fa-chevron-down ml-auto text-[10px] text-gray-400 transition-transform duration-200',
-                      dd.isOpen('dd-save-parent') ? 'rotate-180' : ''
-                    )}
-                  />
-                </button>
-                <div
-                  className={clsx(
-                    'custom-dropdown-menu w-full max-h-[260px] overflow-auto',
-                    dd.isOpen('dd-save-parent') ? '' : 'hidden'
-                  )}
-                >
-                  <button
-                    type="button"
-                    className="custom-dropdown-item"
-                    onClick={() => {
-                      dd.close()
-                      setSaveParentId(null)
-                    }}
-                  >
-                    <i className="fa-solid fa-layer-group mr-2 text-[11px] text-gray-400" /> {t('root')}
-                  </button>
-                  {folderOptions.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      className="custom-dropdown-item"
-                      style={{ paddingLeft: 12 + f.depth * 12 }}
-                      onClick={() => {
-                        dd.close()
-                        setSaveParentId(f.id)
-                      }}
-                    >
-                      <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" /> {f.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
-            <button
-              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
-              onClick={() => setSaveDialogOpen(false)}
-              type="button"
-              disabled={saveBusy}
-            >
-              {t('cancel')}
-            </button>
-            <button
-              className={clsx(
-                'px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium',
-                saveBusy ? 'opacity-70 cursor-not-allowed' : ''
-              )}
-              type="button"
-              onClick={confirmSaveDialog}
-              disabled={saveBusy}
-            >
-              {saveDialogMode === 'saveAs' ? t('saveAs') : t('save')}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* New folder modal */}
-      <div
-        className={clsx(
-          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
-          newFolderOpen ? 'flex opacity-100' : 'hidden opacity-0'
-        )}
-        onMouseDown={(e) => {
-          if (newFolderBusy) return
-          if (e.target === e.currentTarget) {
-            setNewFolderOpen(false)
-            setNewFolderParentId(null)
-          }
+      <SettingsDialog
+        open={settingsOpen}
+        t={t}
+        settings={settings}
+        settingsDraft={settingsDraft}
+        setSettingsDraft={setSettingsDraft}
+        envDrafts={envDrafts}
+        setEnvDrafts={setEnvDrafts}
+        displayEnvs={displayEnvs}
+        activeProjectId={activeProjectId}
+        addEnvironmentDraft={addEnvironmentDraft}
+        requestDeleteEnvironmentDraft={requestDeleteEnvironmentDraft}
+        importPostman={importPostman}
+        exportPostman={exportPostman}
+        exportOpenAPI={exportOpenAPI}
+        errorMsg={errorMsg}
+        onClose={() => {
+          setSettingsDraft(null)
+          setEnvDrafts(null)
+          setSettingsOpen(false)
         }}
-      >
-          <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-              <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('newFolder')}</h2>
-              <button
-                className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-                onClick={() => {
-                  if (newFolderBusy) return
-                setNewFolderOpen(false)
-                setNewFolderParentId(null)
-              }}
-              type="button"
-              title="Close"
-            >
-              <i className="fa-solid fa-xmark" />
-            </button>
-          </div>
-
-          <div className="p-5 space-y-3">
-            <div>
-              <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                {t('name')}
-              </label>
-              <input
-                ref={newFolderNameInputRef}
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmNewFolder()
-                }}
-                className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-                placeholder={t('enterName')}
-                disabled={newFolderBusy}
-              />
-            </div>
-
-            <div className="text-[12px] text-gray-500 dark:text-gray-400 flex items-center">
-              <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" />
-              {t('location')}: {' '}
-              <span className="ml-1 truncate">
-                {newFolderParentId
-                  ? folderOptions.find((f) => f.id === newFolderParentId)?.name ?? t('folder')
-                  : t('root')}
-              </span>
-            </div>
-          </div>
-
-          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
-            <button
-              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
-              onClick={() => {
-                if (newFolderBusy) return
-                setNewFolderOpen(false)
-                setNewFolderParentId(null)
-              }}
-              type="button"
-              disabled={newFolderBusy}
-            >
-              {t('cancel')}
-            </button>
-            <button
-              className={clsx(
-                'px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium',
-                newFolderBusy ? 'opacity-70 cursor-not-allowed' : ''
-              )}
-              type="button"
-              onClick={confirmNewFolder}
-              disabled={newFolderBusy}
-            >
-              {t('create')}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Confirm modal */}
-      <div
-        className={clsx(
-          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[170] items-center justify-center opacity-0 transition-opacity duration-200',
-          confirmDialog ? 'flex opacity-100' : 'hidden opacity-0'
-        )}
-        onMouseDown={(e) => {
-          if (confirmBusy) return
-          if (e.target === e.currentTarget) setConfirmDialog(null)
-        }}
-      >
-        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">
-              {confirmDialog?.title ?? t('confirm')}
-            </h2>
-            <button
-              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-              onClick={() => {
-                if (confirmBusy) return
-                setConfirmDialog(null)
-              }}
-              type="button"
-              title="Close"
-            >
-              <i className="fa-solid fa-xmark" />
-            </button>
-          </div>
-
-          <div className="p-5 text-gray-700 dark:text-gray-200 leading-relaxed">
-            <div className="text-[13px]">{confirmDialog?.message ?? ''}</div>
-          </div>
-
-          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
-            <button
-              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
-              onClick={() => setConfirmDialog(null)}
-              type="button"
-              disabled={confirmBusy}
-            >
-              {t('cancel')}
-            </button>
-            <button
-              className={clsx(
-                'px-4 py-1.5 rounded-md transition-colors shadow-sm font-medium text-white',
-                confirmDialog?.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-ui-primary hover:bg-ui-primaryHover',
-                confirmBusy ? 'opacity-70 cursor-not-allowed' : ''
-              )}
-              type="button"
-              disabled={confirmBusy}
-              onClick={async () => {
-                if (!confirmDialog) return
-                setConfirmBusy(true)
-                try {
-                  await confirmDialog.onConfirm()
-                  setConfirmDialog(null)
-                } catch (err: any) {
-                  toast.show(String(err?.message ?? err), 'error')
-                } finally {
-                  setConfirmBusy(false)
-                }
-              }}
-            >
-              {confirmDialog?.confirmLabel ?? t('confirm')}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Settings modal (template-inspired) */}
-      <div
-        id="settingsModalOverlay"
-        className={clsx(
-          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
-          settingsOpen ? 'flex opacity-100' : 'hidden opacity-0'
-        )}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) {
-            setSettingsDraft(null)
-            setEnvDrafts(null)
-            setSettingsOpen(false)
-          }
-        }}
-      >
-        <div
-          id="settingsModalBox"
-          className="bg-white dark:bg-[#1e1e1e] w-full max-w-2xl rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden transform scale-100 transition-transform duration-200"
-        >
-          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t('preferences')}</h2>
-            <button
-              id="closeSettingsBtn"
-              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-              onClick={() => {
-                setSettingsDraft(null)
-                setEnvDrafts(null)
-                setSettingsOpen(false)
-              }}
-              type="button"
-              title="Close"
-            >
-              <i className="fa-solid fa-xmark" />
-            </button>
-          </div>
-
-          <div className="flex min-h-0">
-            <div className="w-52 border-r border-ui-border dark:border-ui-borderDark p-4 bg-surface-50 dark:bg-surface-900">
-                <div className="flex flex-col space-y-1">
-                  <div className="px-3 py-1.5 text-ui-primary font-medium bg-ui-primary/10 rounded-md cursor-pointer text-[13px]">
-                  {t('general')}
-                  </div>
-                  <div className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">
-                  {t('appearance')}
-                  </div>
-                  <div className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md cursor-pointer text-[13px]">
-                  Data
-                  </div>
-                </div>
-            </div>
-
-            <div className="flex-1 p-6 overflow-y-auto">
-              <div className="mb-5">
-                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                  {t('timeout')}
-                </label>
-                <input
-                  type="number"
-                  value={settingsDraft?.requestTimeoutMs ?? settings?.requestTimeoutMs ?? 10000}
-                  onChange={(e) =>
-                    setSettingsDraft((prev) => {
-                      const base = prev ?? (settings ? { ...settings } : null)
-                      if (!base) return prev
-                      return { ...base, requestTimeoutMs: Number(e.target.value || 0) }
-                    })
-                  }
-                  className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none font-mono"
-                />
-              </div>
-
-              <div className="mb-5">
-                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                  {t('theme')}
-                </label>
-                <select
-                  value={settingsDraft?.theme ?? settings?.theme ?? 'system'}
-                  onChange={(e) =>
-                    setSettingsDraft((prev) => {
-                      const base = prev ?? (settings ? { ...settings } : null)
-                      if (!base) return prev
-                      return { ...base, theme: e.target.value as Theme }
-                    })
-                  }
-                  className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-                >
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-              </div>
-
-              <div className="mb-5">
-                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
-                  {t('language')}
-                </label>
-                <select
-                  value={settingsDraft?.language ?? settings?.language ?? 'zh'}
-                  onChange={(e) =>
-                    setSettingsDraft((prev) => {
-                      const base = prev ?? (settings ? { ...settings } : null)
-                      if (!base) return prev
-                      return { ...base, language: e.target.value as 'zh' | 'en' }
-                    })
-                  }
-                  className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
-                >
-                  <option value="zh">中文</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-
-              <div className="mb-5">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-gray-700 dark:text-gray-300 font-medium text-[12px]">
-                    {t('environments')}
-                  </label>
-                  <button
-                    type="button"
-                    className="h-7 px-2.5 rounded-md border border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-[12px] font-medium text-gray-700 dark:text-gray-200"
-                    onClick={addEnvironmentDraft}
-                    disabled={!activeProjectId}
-                    title={t('addEnvironment')}
-                  >
-                    <i className="fa-solid fa-plus mr-1.5 text-[10px] text-gray-400" />
-                    {t('addEnvironment')}
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {(envDrafts ?? displayEnvs).map((e) => (
-                    <div key={e.id} className="flex items-center gap-2">
-                      <div className="w-36 shrink-0 flex items-center gap-2">
-                        <span className={clsx('w-2 h-2 rounded-full', envToneDot(e.name))} />
-                        <input
-                          type="text"
-                          value={e.name ?? ''}
-                          onChange={(ev) => {
-                            const v = ev.target.value
-                            setEnvDrafts((prev) => {
-                              const base = (prev ?? displayEnvs).map((x) => ({ ...x, vars: { ...(x.vars ?? {}) } }))
-                              const i = base.findIndex((x) => x.id === e.id)
-                              if (i >= 0) base[i] = { ...base[i], name: v }
-                              return base
-                            })
-                          }}
-                          placeholder={t('envName')}
-                          className="w-full min-w-0 bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-2.5 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none text-[12px] font-medium"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={e.baseUrl ?? ''}
-                        onChange={(ev) => {
-                          const v = ev.target.value
-                          setEnvDrafts((prev) => {
-                            const base = (prev ?? displayEnvs).map((x) => ({ ...x, vars: { ...(x.vars ?? {}) } }))
-                            const i = base.findIndex((x) => x.id === e.id)
-                            if (i >= 0) base[i] = { ...base[i], baseUrl: v }
-                            return base
-                          })
-                        }}
-                        placeholder={t('baseUrlOptional')}
-                        className="flex-1 min-w-0 bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none font-mono text-[12px]"
-                      />
-                      <button
-                        type="button"
-                        className={clsx(
-                          'w-9 h-9 rounded-md border border-ui-border dark:border-ui-borderDark flex items-center justify-center transition-colors',
-                          (envDrafts ?? displayEnvs).length <= 1
-                            ? 'opacity-50 cursor-not-allowed bg-surface-50 dark:bg-surface-900 text-gray-400'
-                            : 'bg-surface-50 dark:bg-surface-900 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 dark:text-red-400'
-                        )}
-                        onClick={() => requestDeleteEnvironmentDraft(e.id)}
-                        disabled={(envDrafts ?? displayEnvs).length <= 1}
-                        title={t('delete')}
-                        aria-label={t('delete')}
-                      >
-                        <i className="fa-solid fa-trash text-[12px]" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
-                  {t('baseUrlHelp')}
-                </div>
-              </div>
-
-              <div className="mb-5">
-                <label className="flex items-center cursor-pointer group">
-                  <div className="relative flex items-center justify-center w-4 h-4 mr-2">
-                    <input
-                      type="checkbox"
-                      checked={settingsDraft?.autoSave ?? settings?.autoSave ?? true}
-                      onChange={(e) =>
-                        setSettingsDraft((prev) => {
-                          const base = prev ?? (settings ? { ...settings } : null)
-                          if (!base) return prev
-                          return { ...base, autoSave: e.target.checked }
-                        })
-                      }
-                      className="peer appearance-none w-4 h-4 border border-gray-300 dark:border-[#555] rounded-[3px] checked:bg-ui-primary checked:border-ui-primary transition-colors cursor-pointer"
-                    />
-                    <i className="fa-solid fa-check absolute text-white text-[10px] opacity-0 peer-checked:opacity-100 pointer-events-none" />
-                  </div>
-                  <span className="text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
-                    {t('autoSave')}
-                  </span>
-                </label>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2 border-t border-ui-border dark:border-ui-borderDark">
-                <button
-                  type="button"
-                  className="px-3 py-1.5 border border-ui-border dark:border-ui-borderDark rounded-md hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors font-medium"
-                  onClick={importPostman}
-                >
-                  {t('importPostman')}
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 border border-ui-border dark:border-ui-borderDark rounded-md hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors font-medium"
-                  onClick={exportPostman}
-                  disabled={!activeProjectId}
-                >
-                  {t('exportPostman')}
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 border border-ui-border dark:border-ui-borderDark rounded-md hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors font-medium"
-                  onClick={exportOpenAPI}
-                  disabled={!activeProjectId}
-                >
-                  {t('exportOpenapi')}
-                </button>
-              </div>
-
-              {errorMsg ? <div className="mt-4 text-[12px] text-red-600 dark:text-red-300">{errorMsg}</div> : null}
-            </div>
-          </div>
-
-          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
-            <button
-              id="cancelSettingsBtn"
-              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
-              onClick={() => {
-                setSettingsDraft(null)
-                setEnvDrafts(null)
-                setSettingsOpen(false)
-              }}
-              type="button"
-            >
-              {t('cancel')}
-            </button>
-            <button
-              className="px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium"
-              type="button"
-              onClick={saveSettingsDraft}
-            >
-              {t('saveChanges')}
-            </button>
-          </div>
-        </div>
-      </div>
+        onSave={saveSettingsDraft}
+      />
     </div>
   )
-}
-
-function envToneDot(name: string): string {
-  const n = (name || '').toLowerCase()
-  if (n.includes('stag')) return 'bg-http-post'
-  if (n.includes('prod')) return 'bg-http-delete'
-  return 'bg-http-get'
-}
-
-function methodToneClass(method: string): string {
-  const m = (method || '').toUpperCase()
-  if (m === 'POST') return 'text-http-post'
-  if (m === 'PUT') return 'text-http-put'
-  if (m === 'DELETE') return 'text-http-delete'
-  if (m === 'PATCH') return 'text-http-patch'
-  return 'text-http-get'
-}
-
-function methodToneDotClass(method: string): string {
-  const m = (method || '').toUpperCase()
-  if (m === 'POST') return 'bg-http-post'
-  if (m === 'PUT') return 'bg-http-put'
-  if (m === 'DELETE') return 'bg-http-delete'
-  if (m === 'PATCH') return 'bg-http-patch'
-  return 'bg-http-get'
-}
-
-function methodShort(method: string): string {
-  const m = (method || '').toUpperCase()
-  if (m === 'DELETE') return 'DEL'
-  return m || 'GET'
-}
-
-function statusToneClass(status: number): string {
-  if (status >= 200 && status < 300) return 'text-http-get'
-  if (status >= 400) return 'text-http-delete'
-  return 'text-http-post'
-}
-
-function joinURLPath(basePath: string, addPath: string): string {
-  const a = (basePath || '').replace(/\/+$/, '')
-  const b = (addPath || '').replace(/^\/+/, '')
-  if (!a) return '/' + b
-  if (!b) return a
-  return a + '/' + b
-}
-
-function fingerprintURL(req: Request): string {
-  return `${req.urlMode}|${req.urlFull}|${req.path}|${JSON.stringify(req.queryParams ?? [])}`
-}
-
-function computeDisplayURL(req: Request, env: Environment | null): string {
-  const base = computeBaseURL(req, env)
-  if (!base) return ''
-
-  try {
-    const u = new URL(base)
-    const q = new URLSearchParams(u.search)
-    for (const kv of req.queryParams ?? []) {
-      if (!kv.enabled) continue
-      if (!kv.key?.trim()) continue
-      q.append(kv.key, kv.value ?? '')
-    }
-    u.search = q.toString()
-    return u.toString()
-  } catch {
-    return base
-  }
-}
-
-function computeBaseURL(req: Request, env: Environment | null): string {
-  if (req.urlMode !== 'basepath') return (req.urlFull || '').trim()
-
-  const baseRaw = (env?.baseUrl || '').trim()
-  // When base URL is missing, fall back to the stored full URL (so sends still work).
-  if (!baseRaw) return (req.urlFull || '').trim()
-
-  try {
-    const u = new URL(baseRaw)
-    const p = (req.path || '/').trim() || '/'
-    u.pathname = joinURLPath(u.pathname, p)
-    u.search = ''
-    u.hash = ''
-    return u.toString()
-  } catch {
-    return (req.urlFull || '').trim()
-  }
-}
-
-function applyUrlTextToRequest(req: Request, urlText: string, env: Environment | null): Request {
-  const trimmed = (urlText || '').trim()
-  if (!trimmed) return req
-
-  const prev = normalizeRequest(req)
-  const prevByKey = new Map<string, KV>()
-  for (const kv of prev.queryParams ?? []) {
-    if (!kv.key) continue
-    if (!prevByKey.has(kv.key)) prevByKey.set(kv.key, kv)
-  }
-
-  const envBaseRaw = (env?.baseUrl || '').trim()
-
-  function kvFromSearchParams(sp: URLSearchParams): KV[] {
-    const nextQuery: KV[] = []
-    sp.forEach((value, key) => {
-      const prevRow = prevByKey.get(key)
-      nextQuery.push({
-        enabled: true,
-        key,
-        value,
-        type: (prevRow?.type as KVType) || 'String',
-        description: prevRow?.description || '',
-      })
-    })
-    return nextQuery
-  }
-
-  function computeFullFromBasePath(baseRaw: string, pathRaw: string): string {
-    try {
-      const u = new URL(baseRaw)
-      u.pathname = joinURLPath(u.pathname, pathRaw || '/')
-      u.search = ''
-      u.hash = ''
-      return u.toString()
-    } catch {
-      return ''
-    }
-  }
-
-  function tryExtractPathFromFullURL(u: URL, baseRaw: string): string | null {
-    if (!baseRaw) return null
-    try {
-      const base = new URL(baseRaw)
-      if (u.origin !== base.origin) return null
-
-      const basePath = base.pathname.replace(/\/+$/, '')
-      const fullPath = u.pathname || '/'
-      if (basePath) {
-        if (fullPath === basePath) return '/'
-        if (!fullPath.startsWith(basePath + '/')) return null
-        const rest = fullPath.slice(basePath.length)
-        return rest || '/'
-      }
-      return fullPath || '/'
-    } catch {
-      return null
-    }
-  }
-
-  // Absolute URL input.
-  if (trimmed.includes('://')) {
-    try {
-      const u = new URL(trimmed)
-      const nextQuery = kvFromSearchParams(u.searchParams)
-      u.search = ''
-      u.hash = ''
-
-      const extracted = tryExtractPathFromFullURL(u, envBaseRaw)
-      if (extracted && envBaseRaw) {
-        const urlFull = u.toString()
-        return normalizeRequest({
-          ...prev,
-          urlMode: 'basepath',
-          urlFull,
-          path: extracted,
-          queryParams: nextQuery,
-        })
-      }
-
-      return normalizeRequest({
-        ...prev,
-        urlMode: 'full',
-        urlFull: u.toString(),
-        queryParams: nextQuery,
-      })
-    } catch {
-      return normalizeRequest({ ...prev, urlMode: 'full', urlFull: trimmed })
-    }
-  }
-
-  // Relative path input (when env base URL exists, store as basepath).
-  const qIdx = trimmed.indexOf('?')
-  const rawPath = (qIdx >= 0 ? trimmed.slice(0, qIdx) : trimmed).trim()
-  const rawQuery = qIdx >= 0 ? trimmed.slice(qIdx + 1) : ''
-  const nextQuery = kvFromSearchParams(new URLSearchParams(rawQuery))
-
-  if (envBaseRaw) {
-    const path = rawPath || '/'
-    const urlFull = computeFullFromBasePath(envBaseRaw, path)
-    return normalizeRequest({
-      ...prev,
-      urlMode: 'basepath',
-      urlFull: urlFull || prev.urlFull,
-      path,
-      queryParams: nextQuery,
-    })
-  }
-
-  const baseOnly = rawPath || trimmed
-  return normalizeRequest({ ...prev, urlMode: 'full', urlFull: baseOnly, queryParams: nextQuery })
-}
-
-function filterTree(nodes: BootstrapData['tree'], q: string): BootstrapData['tree'] {
-  const out: BootstrapData['tree'] = []
-  for (const n of nodes) {
-    const nameHit = (n.name || '').toLowerCase().includes(q)
-    if (n.type === 'request') {
-      if (nameHit) out.push(n)
-      continue
-    }
-    const kids = n.children ? filterTree(n.children, q) : []
-    if (nameHit || kids.length) out.push({ ...n, children: kids })
-  }
-  return out
-}
-
-function sortEnvsForDisplay(envs: Environment[]): Environment[] {
-  function rank(name: string): number {
-    const n = (name || '').toLowerCase()
-    if (n.includes('dev')) return 0
-    if (n.includes('stag')) return 1
-    if (n.includes('prod')) return 2
-    return 100
-  }
-  return envs
-    .slice()
-    .sort((a, b) => rank(a.name) - rank(b.name) || (a.name || '').localeCompare(b.name || ''))
-}
-
-type FolderOption = { id: string; name: string; depth: number }
-
-function flattenFolderOptions(nodes: BootstrapData['tree']): FolderOption[] {
-  const out: FolderOption[] = []
-  function walk(list: BootstrapData['tree'], depth: number) {
-    for (const n of list) {
-      if (n.type !== 'folder') continue
-      out.push({ id: n.id, name: n.name, depth })
-      if (n.children?.length) walk(n.children, depth + 1)
-    }
-  }
-  walk(nodes, 0)
-  return out
-}
-
-function findNodeDepth(nodes: BootstrapData['tree'], nodeId: string): number {
-  function walk(list: BootstrapData['tree'], depth: number): number {
-    for (const n of list) {
-      if (n.type === 'folder' && n.id === nodeId) return depth
-      if (n.type === 'folder' && n.children?.length) {
-        const d = walk(n.children, depth + 1)
-        if (d) return d
-      }
-    }
-    return 0
-  }
-  return walk(nodes, 1)
-}
-
-function findNodeWithParentByNodeId(
-  nodes: BootstrapData['tree'],
-  nodeId: string
-): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
-  function walk(
-    list: BootstrapData['tree'],
-    parentId: string | null
-  ): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
-    for (const n of list) {
-      if (n.id === nodeId) return { node: n, parentId }
-      if (n.type === 'folder' && n.children?.length) {
-        const hit = walk(n.children, n.id)
-        if (hit) return hit
-      }
-    }
-    return null
-  }
-  return walk(nodes, null)
-}
-
-function findNodeWithParentByRequestId(
-  nodes: BootstrapData['tree'],
-  requestId: string
-): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
-  function walk(
-    list: BootstrapData['tree'],
-    parentId: string | null
-  ): { node: BootstrapData['tree'][number]; parentId: string | null } | null {
-    for (const n of list) {
-      if (n.type === 'request' && n.requestId === requestId) return { node: n, parentId }
-      if (n.type === 'folder' && n.children?.length) {
-        const hit = walk(n.children, n.id)
-        if (hit) return hit
-      }
-    }
-    return null
-  }
-  return walk(nodes, null)
-}
-
-function findFirstRequestId(nodes: BootstrapData['tree']): string {
-  for (const n of nodes) {
-    if (n.type === 'request' && n.requestId) return n.requestId
-    if (n.type === 'folder' && n.children?.length) {
-      const hit = findFirstRequestId(n.children)
-      if (hit) return hit
-    }
-  }
-  return ''
 }
