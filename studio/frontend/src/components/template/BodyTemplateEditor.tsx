@@ -53,7 +53,12 @@ export function BodyTemplateEditor({
             disabled={!isRaw}
           >
             <span>{formatLabel}</span>
-            <i className="fa-solid fa-chevron-down ml-2 text-[10px] text-gray-400 transition-transform duration-200" />
+            <i
+              className={clsx(
+                'fa-solid fa-chevron-down ml-2 text-[10px] text-gray-400 transition-transform duration-200',
+                formatOpen ? 'rotate-180' : ''
+              )}
+            />
           </button>
           <div className={clsx('custom-dropdown-menu w-full', formatOpen ? '' : 'hidden')}>
             {(['JSON', 'Text'] as const).map((opt) => (

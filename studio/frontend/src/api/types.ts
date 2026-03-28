@@ -129,3 +129,18 @@ export type SendResult = {
   headers: Record<string, string[]>
   body: string
 }
+
+export type HistoryItem = {
+  id: string
+  requestId: string
+  requestName: string
+  method: string
+  urlMode: URLMode
+  urlFull: string
+  path: string
+  startedAt: number
+  durationMs: number
+  status: number
+  ok: boolean
+  error?: string
+}

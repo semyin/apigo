@@ -19,11 +19,23 @@ export function KVFlexTable({
   const safeRows = rows ?? []
   const [draft, setDraft] = useState<KV>(() => emptyKV())
   const draftRef = useRef<HTMLDivElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const shouldScrollToBottomRef = useRef(false)
   const dd = useDropdown()
 
   useEffect(() => {
     setDraft(emptyKV())
   }, [resetKey, idPrefix])
+
+  useEffect(() => {
+    if (!shouldScrollToBottomRef.current) return
+    shouldScrollToBottomRef.current = false
+    const el = containerRef.current
+    if (!el) return
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    })
+  }, [safeRows.length, idPrefix, resetKey])
 
   function setRow(i: number, next: KV) {
     const copy = safeRows.slice()
@@ -42,6 +54,7 @@ export function KVFlexTable({
     const v = (draft.value || '').trim()
     const d = (draft.description || '').trim()
     if (!k && !v && !d) return
+    shouldScrollToBottomRef.current = true
     onChange([...safeRows, { ...draft, enabled: true }])
     setDraft(emptyKV())
   }
@@ -65,7 +78,7 @@ export function KVFlexTable({
         <div className="flex-1 px-2 table-divider-left">Description</div>
       </div>
 
-      <div id={`${idPrefix}-container`} className="flex-1 min-h-0 overflow-y-auto pr-1">
+      <div ref={containerRef} id={`${idPrefix}-container`} className="flex-1 min-h-0 overflow-y-auto pr-1">
         {safeRows.map((r, i) => (
           <div
             key={i}

@@ -262,6 +262,7 @@ func (a *App) SendRequest(requestID string) (storage.SendResult, error) {
 	}
 
 	ctx := a.ctx
+	startedAt := time.Now().UnixMilli()
 	req, err := a.store.GetRequest(ctx, requestID)
 	if err != nil {
 		return storage.SendResult{OK: false, Error: err.Error()}, err
@@ -281,10 +282,33 @@ func (a *App) SendRequest(requestID string) (storage.SendResult, error) {
 		Env:     env,
 		Timeout: time.Duration(settings.RequestTimeoutMs) * time.Millisecond,
 	})
+	// Best-effort history record. Never block the request result.
+	_ = a.store.AddHistory(ctx, requestID, startedAt, req, res)
 	if !res.OK {
 		return res, errors.New(res.Error)
 	}
 	return res, nil
+}
+
+func (a *App) ListHistory(projectID string, limit int) ([]storage.HistoryItem, error) {
+	if a.store == nil {
+		return nil, errors.New("store not ready")
+	}
+	return a.store.ListHistory(a.ctx, projectID, limit)
+}
+
+func (a *App) GetHistory(historyID string) (storage.SendResult, error) {
+	if a.store == nil {
+		return storage.SendResult{OK: false, Error: "store not ready"}, errors.New("store not ready")
+	}
+	return a.store.GetHistory(a.ctx, historyID)
+}
+
+func (a *App) DeleteHistory(historyID string) error {
+	if a.store == nil {
+		return errors.New("store not ready")
+	}
+	return a.store.DeleteHistory(a.ctx, historyID)
 }
 
 func (a *App) ImportPostmanFromDialog() (string, error) {

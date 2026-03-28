@@ -44,6 +44,10 @@
   }
 }
 
+.scroll-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
 /* Template compatibility */
 .custom-select {
   appearance: none;
@@ -76,6 +80,12 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.2);
   padding: 0.25rem 0;
   z-index: 50;
+}
+
+.custom-dropdown-menu.align-right {
+  left: auto;
+  right: 0;
+  min-width: unset;
 }
 
 .dark .custom-dropdown-menu {

@@ -2,6 +2,7 @@ import type {
   BootstrapData,
   CreateRequestResult,
   Environment,
+  HistoryItem,
   Node,
   Project,
   Request,
@@ -44,6 +45,11 @@ export const backend = {
   getRequest: (requestId: string): Promise<Request> => app().GetRequest(requestId),
   saveRequest: (req: Request): Promise<void> => app().SaveRequest(req),
   sendRequest: (requestId: string): Promise<SendResult> => app().SendRequest(requestId),
+
+  listHistory: (projectId: string, limit: number): Promise<HistoryItem[]> =>
+    app().ListHistory(projectId, limit),
+  getHistory: (historyId: string): Promise<SendResult> => app().GetHistory(historyId),
+  deleteHistory: (historyId: string): Promise<void> => app().DeleteHistory(historyId),
 
   listEnvs: (projectId: string): Promise<Environment[]> => app().ListEnvs(projectId),
   saveEnv: (env: Environment): Promise<Environment> => app().SaveEnv(env),

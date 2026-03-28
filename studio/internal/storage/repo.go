@@ -820,3 +820,116 @@ func defaultTemplateHeaders() []KV {
 		{Enabled: true, Key: "Cache-Control", Value: "no-cache", Type: KVTypeString, Description: "Bypass intermediate caches"},
 	}
 }
+
+func (s *Store) AddHistory(ctx context.Context, requestID string, startedAt int64, reqSnap Request, resSnap SendResult) error {
+	if strings.TrimSpace(requestID) == "" {
+		return errors.New("request id is required")
+	}
+	id := uuid.NewString()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO history(id,request_id,started_at,duration_ms,status,req_snapshot_json,res_snapshot_json) VALUES(?,?,?,?,?,?,?)`,
+		id,
+		requestID,
+		startedAt,
+		resSnap.DurationMs,
+		resSnap.Status,
+		mustJSON(reqSnap),
+		mustJSON(resSnap),
+	)
+	return wrapErr("insert history", err)
+}
+
+func (s *Store) ListHistory(ctx context.Context, projectID string, limit int) ([]HistoryItem, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, errors.New("project id is required")
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 30
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			h.id,
+			h.request_id,
+			h.started_at,
+			h.duration_ms,
+			h.status,
+			h.req_snapshot_json,
+			h.res_snapshot_json,
+			n.name
+		FROM history h
+		JOIN requests r ON r.id = h.request_id
+		JOIN nodes n ON n.id = r.node_id
+		WHERE n.project_id = ?
+		ORDER BY h.started_at DESC
+		LIMIT ?
+	`, projectID, limit)
+	if err != nil {
+		return nil, wrapErr("query history", err)
+	}
+	defer rows.Close()
+
+	out := make([]HistoryItem, 0, limit)
+	for rows.Next() {
+		var (
+			id        string
+			requestID string
+			startedAt int64
+			duration  int64
+			status    int
+			reqJSON   string
+			resJSON   string
+			name      string
+		)
+		if err := rows.Scan(&id, &requestID, &startedAt, &duration, &status, &reqJSON, &resJSON, &name); err != nil {
+			return nil, wrapErr("scan history", err)
+		}
+
+		var reqSnap Request
+		_ = fromJSON(reqJSON, &reqSnap)
+		var resSnap SendResult
+		_ = fromJSON(resJSON, &resSnap)
+
+		out = append(out, HistoryItem{
+			ID:          id,
+			RequestID:   requestID,
+			RequestName: name,
+			Method:      reqSnap.Method,
+			URLMode:     reqSnap.URLMode,
+			URLFull:     reqSnap.URLFull,
+			Path:        reqSnap.Path,
+			StartedAt:   startedAt,
+			DurationMs:  duration,
+			Status:      status,
+			OK:          resSnap.OK,
+			Error:       resSnap.Error,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapErr("rows history", err)
+	}
+	return out, nil
+}
+
+func (s *Store) GetHistory(ctx context.Context, historyID string) (SendResult, error) {
+	if strings.TrimSpace(historyID) == "" {
+		return SendResult{}, errors.New("history id is required")
+	}
+	var resJSON string
+	err := s.db.QueryRowContext(ctx, `SELECT res_snapshot_json FROM history WHERE id=?`, historyID).Scan(&resJSON)
+	if err != nil {
+		return SendResult{}, wrapErr("get history", err)
+	}
+	var res SendResult
+	if err := fromJSON(resJSON, &res); err != nil {
+		return SendResult{}, wrapErr("parse history response", err)
+	}
+	return res, nil
+}
+
+func (s *Store) DeleteHistory(ctx context.Context, historyID string) error {
+	if strings.TrimSpace(historyID) == "" {
+		return errors.New("history id is required")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM history WHERE id=?`, historyID)
+	return wrapErr("delete history", err)
+}

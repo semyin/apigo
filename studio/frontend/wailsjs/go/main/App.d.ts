@@ -13,6 +13,8 @@ export function CreateRequest(arg1:string,arg2:any,arg3:string):Promise<main.Cre
 
 export function DeleteEnv(arg1:string):Promise<void>;
 
+export function DeleteHistory(arg1:string):Promise<void>;
+
 export function DeleteNode(arg1:string):Promise<void>;
 
 export function DeleteProject(arg1:string):Promise<void>;
@@ -23,6 +25,8 @@ export function ExportOpenAPIFromDialog(arg1:string):Promise<string>;
 
 export function ExportPostmanFromDialog(arg1:string):Promise<string>;
 
+export function GetHistory(arg1:string):Promise<storage.SendResult>;
+
 export function GetRequest(arg1:string):Promise<storage.Request>;
 
 export function GetSettings():Promise<storage.Settings>;
@@ -32,6 +36,8 @@ export function GetTree(arg1:string):Promise<Array<storage.TreeNode>>;
 export function ImportPostmanFromDialog():Promise<string>;
 
 export function ListEnvs(arg1:string):Promise<Array<storage.Environment>>;
+
+export function ListHistory(arg1:string,arg2:number):Promise<Array<storage.HistoryItem>>;
 
 export function ListProjects():Promise<Array<storage.Project>>;
 

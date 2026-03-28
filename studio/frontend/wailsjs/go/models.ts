@@ -188,6 +188,40 @@ export namespace storage {
 	        this.updatedAt = source["updatedAt"];
 	    }
 	}
+	export class HistoryItem {
+	    id: string;
+	    requestId: string;
+	    requestName: string;
+	    method: string;
+	    urlMode: string;
+	    urlFull: string;
+	    path: string;
+	    startedAt: number;
+	    durationMs: number;
+	    status: number;
+	    ok: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HistoryItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.requestId = source["requestId"];
+	        this.requestName = source["requestName"];
+	        this.method = source["method"];
+	        this.urlMode = source["urlMode"];
+	        this.urlFull = source["urlFull"];
+	        this.path = source["path"];
+	        this.startedAt = source["startedAt"];
+	        this.durationMs = source["durationMs"];
+	        this.status = source["status"];
+	        this.ok = source["ok"];
+	        this.error = source["error"];
+	    }
+	}
 	export class KV {
 	    enabled: boolean;
 	    key: string;

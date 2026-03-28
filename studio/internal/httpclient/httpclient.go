@@ -210,9 +210,8 @@ func Send(ctx context.Context, in SendInput) storage.SendResult {
 }
 
 func buildURL(req storage.Request, env storage.Environment, vars map[string]string) (string, error) {
-	switch req.URLMode {
-	case storage.URLModeFull:
-		raw := strings.TrimSpace(applyVars(req.URLFull, vars))
+	buildFull := func(raw string) (string, error) {
+		raw = strings.TrimSpace(applyVars(raw, vars))
 		if raw == "" {
 			return "", errors.New("url is empty")
 		}
@@ -235,10 +234,19 @@ func buildURL(req storage.Request, env storage.Environment, vars map[string]stri
 		applyAPIKeyQuery(req.Auth, q, vars)
 		u.RawQuery = q.Encode()
 		return u.String(), nil
+	}
+
+	switch req.URLMode {
+	case storage.URLModeFull:
+		return buildFull(req.URLFull)
 
 	case storage.URLModeBasePath:
 		baseRaw := strings.TrimSpace(applyVars(env.BaseURL, vars))
 		if baseRaw == "" {
+			// If base URL is not configured, fall back to stored full URL so the request can still be sent.
+			if strings.TrimSpace(req.URLFull) != "" {
+				return buildFull(req.URLFull)
+			}
 			return "", errors.New("base url is empty")
 		}
 		base, err := url.Parse(baseRaw)
@@ -335,4 +343,3 @@ func utf8Like(b []byte) bool {
 	}
 	return true
 }
-

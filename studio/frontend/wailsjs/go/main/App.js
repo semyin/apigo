@@ -22,6 +22,10 @@ export function DeleteEnv(arg1) {
   return window['go']['main']['App']['DeleteEnv'](arg1);
 }
 
+export function DeleteHistory(arg1) {
+  return window['go']['main']['App']['DeleteHistory'](arg1);
+}
+
 export function DeleteNode(arg1) {
   return window['go']['main']['App']['DeleteNode'](arg1);
 }
@@ -42,6 +46,10 @@ export function ExportPostmanFromDialog(arg1) {
   return window['go']['main']['App']['ExportPostmanFromDialog'](arg1);
 }
 
+export function GetHistory(arg1) {
+  return window['go']['main']['App']['GetHistory'](arg1);
+}
+
 export function GetRequest(arg1) {
   return window['go']['main']['App']['GetRequest'](arg1);
 }
@@ -60,6 +68,10 @@ export function ImportPostmanFromDialog() {
 
 export function ListEnvs(arg1) {
   return window['go']['main']['App']['ListEnvs'](arg1);
+}
+
+export function ListHistory(arg1, arg2) {
+  return window['go']['main']['App']['ListHistory'](arg1, arg2);
 }
 
 export function ListProjects() {

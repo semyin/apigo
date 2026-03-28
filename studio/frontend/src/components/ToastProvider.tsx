@@ -40,15 +40,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 pointer-events-none items-center">
         {toasts.map((t) => (
           <div
             key={t.id}
             className={[
               'pointer-events-none',
-              'min-w-[220px] max-w-[520px]',
+              'w-fit max-w-[80vw]',
               'rounded-lg border shadow-float dark:shadow-floatDark',
-              'px-3 py-2 text-[12px] font-medium',
+              'px-3 py-2 text-[12px] font-medium text-center',
               'bg-white dark:bg-surface-800',
               'border-ui-border dark:border-ui-borderDark',
               t.kind === 'success'
@@ -71,4 +71,3 @@ export function useToast() {
   if (!ctx) throw new Error('ToastProvider missing')
   return ctx
 }
-

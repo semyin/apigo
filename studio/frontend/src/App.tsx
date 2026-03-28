@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { backend } from './api/backend'
-import type { BootstrapData, Environment, KV, KVType, Request, SendResult, Settings } from './api/types'
+import type { BootstrapData, Environment, HistoryItem, KV, KVType, Request, SendResult, Settings } from './api/types'
 import { TreeView } from './components/TreeView'
 import { useToast } from './components/ToastProvider'
 import { AuthTemplateEditor } from './components/template/AuthTemplateEditor'
@@ -19,11 +19,12 @@ import { i18n } from './i18n'
 type ReqTab = 'params' | 'headers' | 'body' | 'auth'
 type ResTab = 'body' | 'headers' | 'cookies'
 
-type SidebarContextKind = 'folder' | 'request'
+type SidebarContextKind = 'folder' | 'request' | 'blank' | 'history'
 type SidebarContextMenu = {
   kind: SidebarContextKind
-  nodeId: string
+  nodeId: string | null
   requestId?: string
+  historyId?: string
   left: number
   top: number
 }
@@ -60,6 +61,7 @@ export default function App() {
   const [urlText, setUrlText] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsDraft, setSettingsDraft] = useState<Settings | null>(null)
+  const [envDrafts, setEnvDrafts] = useState<Environment[] | null>(null)
 
   const [sidebarFilter, setSidebarFilter] = useState('')
 
@@ -71,11 +73,32 @@ export default function App() {
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement | null>(null)
 
+  const [openTabs, setOpenTabs] = useState<string[]>([])
+
+  const [confirmBusy, setConfirmBusy] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string
+    message: string
+    confirmLabel?: string
+    danger?: boolean
+    onConfirm: () => Promise<void> | void
+  } | null>(null)
+
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [saveDialogMode, setSaveDialogMode] = useState<'save' | 'saveAs'>('save')
   const [saveName, setSaveName] = useState('')
   const [saveParentId, setSaveParentId] = useState<string | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
   const saveNameInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null)
+  const [newFolderName, setNewFolderName] = useState('New Folder')
+  const [newFolderBusy, setNewFolderBusy] = useState(false)
+  const newFolderNameInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [historyCollapsed, setHistoryCollapsed] = useState(false)
+  const [history, setHistory] = useState<HistoryItem[]>([])
 
   const splitRootRef = useRef<HTMLDivElement | null>(null)
   const upperPaneRef = useRef<HTMLDivElement | null>(null)
@@ -105,6 +128,14 @@ export default function App() {
   }, [saveDialogOpen])
 
   useEffect(() => {
+    if (!newFolderOpen) return
+    requestAnimationFrame(() => {
+      newFolderNameInputRef.current?.focus()
+      newFolderNameInputRef.current?.select()
+    })
+  }, [newFolderOpen])
+
+  useEffect(() => {
     if (!ctxMenu) return
     function close() {
       setCtxMenu(null)
@@ -121,23 +152,14 @@ export default function App() {
       if (e.key === 'Escape') close()
     }
 
-    function onContextMenu(e: MouseEvent) {
-      const target = e.target as HTMLElement | null
-      if (target?.closest('#sidebarContextMenu')) return
-      if (target?.closest('[data-folder-row]') || target?.closest('[data-request-row]')) return
-      close()
-    }
-
     window.addEventListener('resize', close)
     window.addEventListener('scroll', close, true)
     document.addEventListener('mousedown', onMouseDown)
-    document.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('resize', close)
       window.removeEventListener('scroll', close, true)
       document.removeEventListener('mousedown', onMouseDown)
-      document.removeEventListener('contextmenu', onContextMenu)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [ctxMenu])
@@ -182,6 +204,9 @@ export default function App() {
     setSelectedRequestId(data.selectedRequestId)
     setReq(normalizeRequest(data.selectedRequest))
     setDirty(false)
+    setOpenTabs(data.selectedRequestId ? [data.selectedRequestId] : [])
+    setCtxMenu(null)
+    setResponse(null)
 
     const stored = getStoredTheme()
     const pref: Theme = stored ?? (data.settings.theme || 'system')
@@ -194,6 +219,16 @@ export default function App() {
     const lang = data.settings.language || 'zh'
     i18n.changeLanguage(lang)
   }
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    backend
+      .listHistory(activeProjectId, 30)
+      .then((items) => setHistory(items))
+      .catch(() => {
+        // Ignore history errors; the main UI should still work.
+      })
+  }, [activeProjectId])
 
   // Keep URL input in sync, unless user is actively editing it.
   useEffect(() => {
@@ -254,6 +289,11 @@ export default function App() {
     try {
       const r = await backend.getRequest(requestId)
       setSelectedRequestId(requestId)
+      setOpenTabs((prev) => {
+        if (!requestId) return prev
+        if (prev.includes(requestId)) return prev
+        return [...prev, requestId]
+      })
       setReq(normalizeRequest(r))
       setDirty(false)
       setResponse(null)
@@ -289,6 +329,7 @@ export default function App() {
       const res = await backend.sendRequest(requestId)
       setResponse(res)
       setResTab('body')
+      await refreshHistory()
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
     } finally {
@@ -296,8 +337,8 @@ export default function App() {
     }
   }
 
-  async function saveNow() {
-    if (!req) return
+  async function saveNow(): Promise<boolean> {
+    if (!req) return false
     setErrorMsg('')
     const prepared = applyUrlTextToRequest(req, urlText, activeEnv)
     setSaving(true)
@@ -305,10 +346,30 @@ export default function App() {
       await backend.saveRequest(prepared)
       setReq(prepared)
       setDirty(false)
+      return true
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
+      return false
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function saveFromToolbar() {
+    if (!req) return
+    dd.close()
+    setCtxMenu(null)
+
+    const saved = !!findNodeWithParentByRequestId(tree, req.id)
+    if (!saved) {
+      openSaveDialog('save')
+      return
+    }
+
+    const ok = await saveNow()
+    if (ok) {
+      toast.show('Saved', 'success')
+      void refreshTree()
     }
   }
 
@@ -319,17 +380,47 @@ export default function App() {
     return next
   }
 
+  async function refreshHistory() {
+    if (!activeProjectId) return []
+    const items = await backend.listHistory(activeProjectId, 30)
+    setHistory(items)
+    return items
+  }
+
+  function deleteHistoryById(historyId: string) {
+    if (!historyId) return
+    dd.close()
+    setCtxMenu(null)
+    setConfirmDialog({
+      title: 'Delete history',
+      message: 'Delete this history record? This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        setErrorMsg('')
+        await backend.deleteHistory(historyId)
+        await refreshHistory()
+        toast.show('Deleted', 'success')
+      },
+    })
+  }
+
   async function loadRequestInPlace(requestId: string) {
     if (!requestId) return
     const r = await backend.getRequest(requestId)
     setSelectedRequestId(requestId)
+    setOpenTabs((prev) => {
+      if (!requestId) return prev
+      if (prev.includes(requestId)) return prev
+      return [...prev, requestId]
+    })
     setReq(normalizeRequest(r))
     setDirty(false)
     setResponse(null)
   }
 
   function openSidebarContextMenu(args: {
-    kind: SidebarContextKind
+    kind: Exclude<SidebarContextKind, 'blank' | 'history'>
     nodeId: string
     requestId?: string
     clientX: number
@@ -345,6 +436,16 @@ export default function App() {
     })
   }
 
+  function openBlankContextMenu(clientX: number, clientY: number) {
+    dd.close()
+    setCtxMenu({ kind: 'blank', nodeId: null, left: clientX, top: clientY })
+  }
+
+  function openHistoryContextMenu(historyId: string, clientX: number, clientY: number) {
+    dd.close()
+    setCtxMenu({ kind: 'history', nodeId: null, historyId, left: clientX, top: clientY })
+  }
+
   function openRenameDialog(nodeId: string) {
     dd.close()
     setCtxMenu(null)
@@ -352,6 +453,57 @@ export default function App() {
     setRenameNodeId(nodeId)
     setRenameValue(found?.node.name ?? '')
     setRenameOpen(true)
+  }
+
+  function openNewFolderDialog(parentId: string | null) {
+    if (!activeProjectId) return
+    dd.close()
+    setCtxMenu(null)
+
+    if (parentId) {
+      const d = findNodeDepth(tree, parentId)
+      if (d >= 4) {
+        toast.show('Max folder depth is 4', 'error')
+        return
+      }
+    }
+
+    setNewFolderParentId(parentId)
+    setNewFolderName('New Folder')
+    setNewFolderOpen(true)
+  }
+
+  async function confirmNewFolder() {
+    if (!activeProjectId) return
+    const name = newFolderName.trim()
+    if (!name) {
+      toast.show('Name is required', 'error')
+      return
+    }
+
+    const parentId = newFolderParentId
+    if (parentId) {
+      const d = findNodeDepth(tree, parentId)
+      if (d >= 4) {
+        toast.show('Max folder depth is 4', 'error')
+        return
+      }
+    }
+
+    setErrorMsg('')
+    setNewFolderBusy(true)
+    try {
+      await backend.createFolder(activeProjectId, parentId, name)
+      setNewFolderOpen(false)
+      setNewFolderParentId(null)
+      if (parentId) setCollapsed((p) => ({ ...p, [parentId]: false }))
+      await refreshTree()
+      toast.show('Folder created', 'success')
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    } finally {
+      setNewFolderBusy(false)
+    }
   }
 
   async function confirmRename() {
@@ -376,32 +528,37 @@ export default function App() {
     }
   }
 
-  async function deleteNodeById(nodeId: string) {
+  function deleteNodeById(nodeId: string) {
     if (!nodeId) return
-    if (!window.confirm('Delete this item?')) return
-
-    setErrorMsg('')
-    try {
-      await backend.deleteNode(nodeId)
-      setCtxMenu(null)
-      const nextTree = await refreshTree()
-      // If the current selection was deleted (or was inside a deleted folder), pick the first remaining request.
-      if (selectedRequestId && findNodeWithParentByRequestId(nextTree, selectedRequestId)) {
+    dd.close()
+    setConfirmDialog({
+      title: 'Delete',
+      message: 'Delete this item? This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        setErrorMsg('')
+        await backend.deleteNode(nodeId)
+        setCtxMenu(null)
+        const nextTree = await refreshTree()
+        await refreshHistory()
+        // If the current selection was deleted (or was inside a deleted folder), pick the first remaining request.
+        if (selectedRequestId && findNodeWithParentByRequestId(nextTree, selectedRequestId)) {
+          toast.show('Deleted', 'success')
+          return
+        }
+        const first = findFirstRequestId(nextTree)
+        if (first) await loadRequestInPlace(first)
+        else {
+          setSelectedRequestId('')
+          setReq(null)
+          setResponse(null)
+          setDirty(false)
+          setOpenTabs([])
+        }
         toast.show('Deleted', 'success')
-        return
-      }
-      const first = findFirstRequestId(nextTree)
-      if (first) await loadRequestInPlace(first)
-      else {
-        setSelectedRequestId('')
-        setReq(null)
-        setResponse(null)
-        setDirty(false)
-      }
-      toast.show('Deleted', 'success')
-    } catch (err: any) {
-      setErrorMsg(String(err?.message ?? err))
-    }
+      },
+    })
   }
 
   async function addRequestUnderFolder(folderNodeId: string) {
@@ -413,6 +570,7 @@ export default function App() {
       const nextTree = await refreshTree()
       setCollapsed((p) => ({ ...p, [folderNodeId]: false }))
       setSelectedRequestId(created.request.id)
+      setOpenTabs((prev) => (prev.includes(created.request.id) ? prev : [...prev, created.request.id]))
       setReq(normalizeRequest(created.request))
       setDirty(false)
       setResponse(null)
@@ -435,6 +593,7 @@ export default function App() {
       setCtxMenu(null)
       await refreshTree()
       setSelectedRequestId(created.request.id)
+      setOpenTabs((prev) => (prev.includes(created.request.id) ? prev : [...prev, created.request.id]))
       setReq(normalizeRequest(created.request))
       setDirty(false)
       setResponse(null)
@@ -444,12 +603,82 @@ export default function App() {
     }
   }
 
-  function openSaveDialog() {
+  async function addRequestFromTabs() {
+    if (!activeProjectId) return
+    setErrorMsg('')
+    dd.close()
+    setCtxMenu(null)
+    try {
+      const parentId =
+        selectedRequestId ? findNodeWithParentByRequestId(tree, selectedRequestId)?.parentId ?? null : null
+      const created = await backend.createRequest(activeProjectId, parentId, 'New Request')
+      if (parentId) setCollapsed((p) => ({ ...p, [parentId]: false }))
+      const nextTree = await refreshTree()
+      setSelectedRequestId(created.request.id)
+      setOpenTabs((prev) => (prev.includes(created.request.id) ? prev : [...prev, created.request.id]))
+      setReq(normalizeRequest(created.request))
+      setDirty(false)
+      setResponse(null)
+      setReqTab('params')
+      if (!findNodeWithParentByRequestId(nextTree, created.request.id)) {
+        await refreshTree()
+      }
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    }
+  }
+
+  async function closeTabNow(requestId: string) {
+    if (!requestId) return
+    if (!openTabs.includes(requestId)) return
+
+    const tabs = openTabs.slice()
+    const idx = tabs.indexOf(requestId)
+    const nextTabs = tabs.filter((t) => t !== requestId)
+    setOpenTabs(nextTabs)
+
+    if (requestId !== selectedRequestId) return
+
+    const nextId = nextTabs[idx] ?? nextTabs[idx - 1] ?? findFirstRequestId(tree)
+    if (nextId) await loadRequestInPlace(nextId)
+    else {
+      setSelectedRequestId('')
+      setReq(null)
+      setResponse(null)
+      setDirty(false)
+    }
+  }
+
+  function closeTab(requestId: string) {
+    if (!requestId) return
+    dd.close()
+    setCtxMenu(null)
+
+    if (requestId === selectedRequestId && dirty && settings?.autoSave === false) {
+      setConfirmDialog({
+        title: 'Unsaved changes',
+        message: 'Save changes before closing this tab?',
+        confirmLabel: 'Save & Close',
+        danger: false,
+        onConfirm: async () => {
+          await saveNow()
+          await closeTabNow(requestId)
+        },
+      })
+      return
+    }
+
+    void closeTabNow(requestId)
+  }
+
+  function openSaveDialog(mode: 'save' | 'saveAs') {
     if (!req) return
     dd.close()
     setCtxMenu(null)
+    setSaveDialogMode(mode)
     const found = findNodeWithParentByNodeId(tree, req.nodeId)
-    setSaveName(found?.node.name ?? 'New Request')
+    const baseName = found?.node.name ?? 'New Request'
+    setSaveName(mode === 'saveAs' ? `${baseName} Copy` : baseName)
     setSaveParentId(found?.parentId ?? null)
     setSaveDialogOpen(true)
   }
@@ -461,22 +690,50 @@ export default function App() {
       toast.show('Name is required', 'error')
       return
     }
+    if (!activeProjectId) return
     setErrorMsg('')
     setSaveBusy(true)
     const prepared = applyUrlTextToRequest(req, urlText, activeEnv)
     try {
-      const found = findNodeWithParentByNodeId(tree, req.nodeId)
-      const currentName = found?.node.name ?? ''
-      const currentParent = found?.parentId ?? null
-      if (currentName && currentName !== name) await backend.renameNode(req.nodeId, name)
-      if (currentParent !== saveParentId) await backend.moveNode(req.nodeId, saveParentId)
-      await backend.saveRequest(prepared)
-      setReq(prepared)
-      setDirty(false)
-      setSaveDialogOpen(false)
-      if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
-      await refreshTree()
-      toast.show('Saved', 'success')
+      if (saveDialogMode === 'saveAs') {
+        const created = await backend.createRequest(activeProjectId, saveParentId, name)
+        const copy: Request = normalizeRequest({
+          ...created.request,
+          method: prepared.method,
+          urlMode: prepared.urlMode,
+          urlFull: prepared.urlFull,
+          path: prepared.path,
+          queryParams: prepared.queryParams,
+          headers: prepared.headers,
+          body: prepared.body,
+          auth: prepared.auth,
+          description: prepared.description,
+          updatedAt: created.request.updatedAt,
+        })
+        await backend.saveRequest(copy)
+        setSaveDialogOpen(false)
+        if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
+        await refreshTree()
+        setSelectedRequestId(copy.id)
+        setOpenTabs((prev) => (prev.includes(copy.id) ? prev : [...prev, copy.id]))
+        setReq(copy)
+        setDirty(false)
+        setResponse(null)
+        toast.show('Saved as new request', 'success')
+      } else {
+        const found = findNodeWithParentByNodeId(tree, req.nodeId)
+        const currentName = found?.node.name ?? ''
+        const currentParent = found?.parentId ?? null
+        if (currentName && currentName !== name) await backend.renameNode(req.nodeId, name)
+        if (currentParent !== saveParentId) await backend.moveNode(req.nodeId, saveParentId)
+        await backend.saveRequest(prepared)
+        setReq(prepared)
+        setDirty(false)
+        setSaveDialogOpen(false)
+        if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
+        await refreshTree()
+        toast.show('Saved', 'success')
+      }
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
     } finally {
@@ -592,27 +849,35 @@ export default function App() {
   }
 
   async function saveSettingsDraft() {
-    if (!settingsDraft) {
+    if (!settingsDraft && !envDrafts) {
       setSettingsOpen(false)
+      setEnvDrafts(null)
       return
     }
     setErrorMsg('')
     try {
-      await backend.saveSettings(settingsDraft)
+      if (settingsDraft) await backend.saveSettings(settingsDraft)
+      if (envDrafts) {
+        const saved = await Promise.all(envDrafts.map((e) => backend.saveEnv(e)))
+        setEnvs(saved)
+      }
     } catch (err: any) {
       setErrorMsg(String(err?.message ?? err))
       return
     }
-    setSettings(settingsDraft)
+    if (settingsDraft) setSettings(settingsDraft)
     setSettingsOpen(false)
+    setEnvDrafts(null)
 
     // Apply immediately.
-    setThemePref(settingsDraft.theme)
-    storeTheme(settingsDraft.theme)
-    const resolved = resolveTheme(settingsDraft.theme)
-    setResolvedTheme(resolved)
-    applyThemeClass(resolved)
-    i18n.changeLanguage(settingsDraft.language)
+    if (settingsDraft) {
+      setThemePref(settingsDraft.theme)
+      storeTheme(settingsDraft.theme)
+      const resolved = resolveTheme(settingsDraft.theme)
+      setResolvedTheme(resolved)
+      applyThemeClass(resolved)
+      i18n.changeLanguage(settingsDraft.language)
+    }
   }
 
   const filteredTree = useMemo(() => {
@@ -649,22 +914,107 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-2 select-none">
-          <TreeView
-            nodes={filteredTree}
-            collapsed={collapsed}
-            onToggleFolder={(id) => {
-              setCtxMenu(null)
-              setCollapsed((p) => ({ ...p, [id]: !(p[id] ?? false) }))
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div
+            className="flex-1 overflow-y-auto px-2 pb-2 select-none scroll-gutter-stable"
+            onContextMenu={(e) => {
+              const target = e.target as HTMLElement | null
+              if (target?.closest('[data-folder-row]') || target?.closest('[data-request-row]')) return
+              e.preventDefault()
+              e.stopPropagation()
+              openBlankContextMenu(e.clientX, e.clientY)
             }}
-            selectedRequestId={selectedRequestId}
-            onSelectRequest={(requestId) => {
-              setCtxMenu(null)
-              selectRequest(requestId)
-            }}
-            activeContextNodeId={ctxMenu?.nodeId}
-            onContextMenu={openSidebarContextMenu}
-          />
+          >
+            <TreeView
+              nodes={filteredTree}
+              collapsed={collapsed}
+              onToggleFolder={(id) => {
+                setCtxMenu(null)
+                setCollapsed((p) => ({ ...p, [id]: !(p[id] ?? false) }))
+              }}
+              selectedRequestId={selectedRequestId}
+              onSelectRequest={(requestId) => {
+                setCtxMenu(null)
+                selectRequest(requestId)
+              }}
+              activeContextNodeId={ctxMenu?.nodeId}
+              onContextMenu={openSidebarContextMenu}
+            />
+          </div>
+
+          <div className="border-t border-ui-border dark:border-ui-borderDark px-2 py-2 bg-surface-50/50 dark:bg-surface-900/40">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-gray-700 dark:text-gray-200"
+              onClick={() => setHistoryCollapsed((p) => !p)}
+            >
+              <div className="flex items-center font-medium">
+                <i className="fa-solid fa-clock-rotate-left mr-2 text-[12px] text-gray-400" />
+                History <span className="ml-2 text-[11px] text-gray-400">{history.length}</span>
+              </div>
+              <i
+                className={clsx(
+                  'fa-solid fa-chevron-down text-[10px] text-gray-400 transition-transform duration-200',
+                  historyCollapsed ? '' : 'rotate-180'
+                )}
+              />
+            </button>
+
+            <div
+              className={clsx(
+                'grid transition-[grid-template-rows] duration-200 ease-out',
+                historyCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+              )}
+            >
+              <div className="overflow-hidden">
+                <div className="mt-1 max-h-[220px] overflow-y-auto pr-1 space-y-0.5 scroll-gutter-stable">
+                  {history.length ? (
+                    history.map((h) => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        className="w-full flex items-center px-2 py-1 rounded-md hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-left"
+                        onClick={async () => {
+                          setCtxMenu(null)
+                          await selectRequest(h.requestId)
+                          try {
+                            const snap = await backend.getHistory(h.id)
+                            setResponse(snap)
+                            setResTab('body')
+                          } catch (err: any) {
+                            toast.show(String(err?.message ?? err), 'error')
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openHistoryContextMenu(h.id, e.clientX, e.clientY)
+                        }}
+                        title={new Date(h.startedAt).toLocaleString()}
+                      >
+                        <span
+                          className={clsx(methodToneClass(h.method), 'font-mono font-semibold text-[10px] w-8 shrink-0')}
+                        >
+                          {methodShort(h.method)}
+                        </span>
+                        <span className="truncate text-[12px]">{h.requestName || 'Request'}</span>
+                        <span
+                          className={clsx(
+                            'ml-auto pl-2 font-mono text-[10px] shrink-0',
+                            h.ok ? statusToneClass(h.status) : 'text-red-600 dark:text-red-400'
+                          )}
+                        >
+                          {h.status ? h.status : 'ERR'} {h.durationMs ? `${h.durationMs}ms` : ''}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-2 py-2 text-[12px] text-gray-400">No history yet.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -677,34 +1027,48 @@ export default function App() {
         )}
         style={ctxMenu ? { left: ctxMenu.left, top: ctxMenu.top } : undefined}
       >
-        {ctxMenu?.kind === 'folder' ? (
+        {ctxMenu?.kind === 'blank' ? (
           <>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
-              onClick={() => addRequestUnderFolder(ctxMenu.nodeId)}
+              onClick={() => openNewFolderDialog(null)}
             >
-              <i className="fa-solid fa-plus mr-2 text-[11px] text-gray-400" /> Add
+              <i className="fa-regular fa-folder mr-2 text-[11px] text-gray-400" /> New Folder
+            </button>
+          </>
+        ) : ctxMenu?.kind === 'folder' && ctxMenu.nodeId ? (
+          <>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => openNewFolderDialog(ctxMenu.nodeId)}
+            >
+              <i className="fa-solid fa-folder-plus mr-2 text-[11px] text-gray-400" /> New Folder
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
-              onClick={() => {
-                setCtxMenu(null)
-                openRenameDialog(ctxMenu.nodeId)
-              }}
+              onClick={() => addRequestUnderFolder(ctxMenu.nodeId!)}
+            >
+              <i className="fa-solid fa-plus mr-2 text-[11px] text-gray-400" /> New Request
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => openRenameDialog(ctxMenu.nodeId!)}
             >
               <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> Rename
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-              onClick={() => deleteNodeById(ctxMenu.nodeId)}
+              onClick={() => deleteNodeById(ctxMenu.nodeId!)}
             >
               <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
             </button>
           </>
-        ) : ctxMenu?.kind === 'request' ? (
+        ) : ctxMenu?.kind === 'request' && ctxMenu.nodeId ? (
           <>
             <button
               type="button"
@@ -716,17 +1080,24 @@ export default function App() {
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
-              onClick={() => {
-                setCtxMenu(null)
-                openRenameDialog(ctxMenu.nodeId)
-              }}
+              onClick={() => openRenameDialog(ctxMenu.nodeId!)}
             >
               <i className="fa-solid fa-pen mr-2 text-[11px] text-gray-400" /> Rename
             </button>
             <button
               type="button"
               className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-              onClick={() => deleteNodeById(ctxMenu.nodeId)}
+              onClick={() => deleteNodeById(ctxMenu.nodeId!)}
+            >
+              <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
+            </button>
+          </>
+        ) : ctxMenu?.kind === 'history' && ctxMenu.historyId ? (
+          <>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              onClick={() => deleteHistoryById(ctxMenu.historyId!)}
             >
               <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
             </button>
@@ -785,6 +1156,7 @@ export default function App() {
               onClick={() => {
                 dd.close()
                 setCtxMenu(null)
+                setEnvDrafts(displayEnvs.map((e) => ({ ...e, vars: { ...(e.vars ?? {}) } })))
                 setSettingsDraft(
                   settings
                     ? { ...settings }
@@ -801,13 +1173,72 @@ export default function App() {
         </header>
 
         <div className="p-4 pb-3">
+          {/* Request tabs (template extension) */}
+          <div className="flex items-center gap-2 mb-2">
+            <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto">
+              {openTabs.map((id) => {
+                const hit = findNodeWithParentByRequestId(tree, id)
+                const name = hit?.node.name ?? (id === selectedRequestId ? req?.id || 'Request' : 'Request')
+                const method = (hit?.node.method || (id === selectedRequestId ? req?.method : '') || 'GET').toUpperCase()
+                const active = id === selectedRequestId
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={clsx(
+                      'group h-8 max-w-[260px] px-2.5 rounded-md border flex items-center gap-2 shrink-0 transition-colors',
+                      active
+                        ? 'border-ui-primary/40 bg-ui-primary/5 text-ui-primary dark:text-blue-300'
+                        : 'border-ui-border dark:border-ui-borderDark bg-white dark:bg-surface-800/40 text-gray-700 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800'
+                    )}
+                    onClick={() => {
+                      setCtxMenu(null)
+                      if (id !== selectedRequestId) selectRequest(id)
+                    }}
+                    title={name}
+                  >
+                    <span className={clsx(methodToneClass(method), 'font-mono font-semibold text-[10px] w-8 shrink-0')}>
+                      {methodShort(method)}
+                    </span>
+                    <span className="truncate text-[12px]">{name}</span>
+                    {active && dirty ? <span className="w-1.5 h-1.5 rounded-full bg-ui-primary/70" /> : null}
+                    <span
+                      className={clsx(
+                        'ml-0.5 w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors',
+                        'opacity-0 group-hover:opacity-100'
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        closeTab(id)
+                      }}
+                      role="button"
+                      aria-label="Close tab"
+                      title="Close"
+                    >
+                      <i className="fa-solid fa-xmark text-[10px]" />
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              className="w-8 h-8 flex items-center justify-center rounded-md border border-ui-border dark:border-ui-borderDark bg-white dark:bg-surface-800/40 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-gray-600 dark:text-gray-200 shrink-0"
+              onClick={addRequestFromTabs}
+              disabled={!activeProjectId}
+              title="New request"
+            >
+              <i className="fa-solid fa-plus text-[12px]" />
+            </button>
+          </div>
+
           <div className="flex items-stretch gap-2">
             <div className="flex flex-1 items-stretch border border-ui-border dark:border-ui-borderDark rounded-md shadow-subtle focus-within:border-ui-primary dark:focus-within:border-ui-primary focus-within:ring-2 focus-within:ring-ui-primary/20 transition-all bg-white dark:bg-surface-800/50 h-[38px] min-w-0">
               <div className="relative flex items-center border-r border-ui-border dark:border-ui-borderDark rounded-l-md px-1">
                 <div id="dd-method" className="relative">
                   <button
                     type="button"
-                    className="flex items-center w-[104px] h-[30px] px-3 rounded cursor-pointer transition-colors hover:bg-surface-100 dark:hover:bg-surface-800"
+                    className="flex items-center w-[92px] h-[30px] px-3 rounded cursor-pointer transition-colors hover:bg-surface-100 dark:hover:bg-surface-800"
                     onClick={() => dd.toggle('dd-method')}
                     disabled={!req}
                   >
@@ -866,17 +1297,64 @@ export default function App() {
             >
               <i className="fa-solid fa-paper-plane mr-1.5 text-[12px] opacity-90" /> Send
             </button>
-            <button
-              className={clsx(
-                'h-[38px] shrink-0 border border-ui-border dark:border-ui-borderDark bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-700 dark:text-gray-200 font-medium px-4 transition-colors flex items-center rounded-md',
-                saving ? 'opacity-70 cursor-not-allowed' : ''
-              )}
-              onClick={openSaveDialog}
-              disabled={!req || saving}
-              type="button"
-            >
-              <i className="fa-regular fa-floppy-disk mr-1.5 text-[12px] opacity-70" /> Save
-            </button>
+
+            {/* Save split button: Save / Save As */}
+            <div id="dd-save" className="relative shrink-0 flex">
+              <button
+                className={clsx(
+                  'h-[38px] border border-ui-border dark:border-ui-borderDark bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-700 dark:text-gray-200 font-medium px-4 transition-colors flex items-center rounded-l-md',
+                  saving ? 'opacity-70 cursor-not-allowed' : ''
+                )}
+                onClick={saveFromToolbar}
+                disabled={!req || saving}
+                type="button"
+              >
+                <i className="fa-regular fa-floppy-disk mr-1.5 text-[12px] opacity-70" /> Save
+              </button>
+              <button
+                className={clsx(
+                  'h-[38px] w-10 flex items-center justify-center border-y border-r border-ui-border dark:border-ui-borderDark bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-700 dark:text-gray-200 transition-colors rounded-r-md',
+                  saving ? 'opacity-70 cursor-not-allowed' : ''
+                )}
+                onClick={() => dd.toggle('dd-save')}
+                disabled={!req || saving}
+                type="button"
+                aria-label="Save menu"
+              >
+                <i
+                  className={clsx(
+                    'fa-solid fa-chevron-down text-[10px] text-gray-400 transition-transform duration-200',
+                    dd.isOpen('dd-save') ? 'rotate-180' : ''
+                  )}
+                />
+              </button>
+              <div
+                className={clsx(
+                  'custom-dropdown-menu align-right w-[160px]',
+                  dd.isOpen('dd-save') ? '' : 'hidden'
+                )}
+              >
+                <button
+                  type="button"
+                  className="custom-dropdown-item"
+                  onClick={() => {
+                    void saveFromToolbar()
+                  }}
+                >
+                  <i className="fa-regular fa-floppy-disk mr-2 text-[11px] text-gray-400" /> Save
+                </button>
+                <button
+                  type="button"
+                  className="custom-dropdown-item"
+                  onClick={() => {
+                    dd.close()
+                    openSaveDialog('saveAs')
+                  }}
+                >
+                  <i className="fa-solid fa-copy mr-2 text-[11px] text-gray-400" /> Save As
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1195,9 +1673,11 @@ export default function App() {
           if (e.target === e.currentTarget) setSaveDialogOpen(false)
         }}
       >
-        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-lg rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-lg rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-visible">
           <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">Save Request</h2>
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">
+              {saveDialogMode === 'saveAs' ? 'Save As' : 'Save Request'}
+            </h2>
             <button
               className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
               onClick={() => setSaveDialogOpen(false)}
@@ -1303,7 +1783,163 @@ export default function App() {
               onClick={confirmSaveDialog}
               disabled={saveBusy}
             >
-              Save
+              {saveDialogMode === 'saveAs' ? 'Save As' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* New folder modal */}
+      <div
+        className={clsx(
+          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[160] items-center justify-center opacity-0 transition-opacity duration-200',
+          newFolderOpen ? 'flex opacity-100' : 'hidden opacity-0'
+        )}
+        onMouseDown={(e) => {
+          if (newFolderBusy) return
+          if (e.target === e.currentTarget) {
+            setNewFolderOpen(false)
+            setNewFolderParentId(null)
+          }
+        }}
+      >
+        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">New Folder</h2>
+            <button
+              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+              onClick={() => {
+                if (newFolderBusy) return
+                setNewFolderOpen(false)
+                setNewFolderParentId(null)
+              }}
+              type="button"
+              title="Close"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-3">
+            <div>
+              <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+                Name
+              </label>
+              <input
+                ref={newFolderNameInputRef}
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmNewFolder()
+                }}
+                className="w-full bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-2 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none"
+                placeholder="Enter a folder name"
+                disabled={newFolderBusy}
+              />
+            </div>
+
+            <div className="text-[12px] text-gray-500 dark:text-gray-400 flex items-center">
+              <i className="fa-regular fa-folder text-yellow-500 mr-2 text-[12px]" />
+              Location:{' '}
+              <span className="ml-1 truncate">
+                {newFolderParentId
+                  ? folderOptions.find((f) => f.id === newFolderParentId)?.name ?? 'Folder'
+                  : 'Root'}
+              </span>
+            </div>
+          </div>
+
+          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
+            <button
+              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
+              onClick={() => {
+                if (newFolderBusy) return
+                setNewFolderOpen(false)
+                setNewFolderParentId(null)
+              }}
+              type="button"
+              disabled={newFolderBusy}
+            >
+              Cancel
+            </button>
+            <button
+              className={clsx(
+                'px-4 py-1.5 bg-ui-primary hover:bg-ui-primaryHover text-white rounded-md transition-colors shadow-sm font-medium',
+                newFolderBusy ? 'opacity-70 cursor-not-allowed' : ''
+              )}
+              type="button"
+              onClick={confirmNewFolder}
+              disabled={newFolderBusy}
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Confirm modal */}
+      <div
+        className={clsx(
+          'fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm z-[170] items-center justify-center opacity-0 transition-opacity duration-200',
+          confirmDialog ? 'flex opacity-100' : 'hidden opacity-0'
+        )}
+        onMouseDown={(e) => {
+          if (confirmBusy) return
+          if (e.target === e.currentTarget) setConfirmDialog(null)
+        }}
+      >
+        <div className="bg-white dark:bg-[#1e1e1e] w-full max-w-md rounded-xl shadow-float dark:shadow-floatDark border border-ui-border dark:border-[#333] flex flex-col overflow-hidden">
+          <div className="flex justify-between items-center px-5 py-3 border-b border-ui-border dark:border-ui-borderDark bg-surface-50 dark:bg-surface-900">
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">{confirmDialog?.title ?? 'Confirm'}</h2>
+            <button
+              className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+              onClick={() => {
+                if (confirmBusy) return
+                setConfirmDialog(null)
+              }}
+              type="button"
+              title="Close"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          </div>
+
+          <div className="p-5 text-gray-700 dark:text-gray-200 leading-relaxed">
+            <div className="text-[13px]">{confirmDialog?.message ?? ''}</div>
+          </div>
+
+          <div className="px-5 py-3 border-t border-ui-border dark:border-ui-borderDark flex justify-end bg-surface-50 dark:bg-surface-900 gap-2">
+            <button
+              className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
+              onClick={() => setConfirmDialog(null)}
+              type="button"
+              disabled={confirmBusy}
+            >
+              Cancel
+            </button>
+            <button
+              className={clsx(
+                'px-4 py-1.5 rounded-md transition-colors shadow-sm font-medium text-white',
+                confirmDialog?.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-ui-primary hover:bg-ui-primaryHover',
+                confirmBusy ? 'opacity-70 cursor-not-allowed' : ''
+              )}
+              type="button"
+              disabled={confirmBusy}
+              onClick={async () => {
+                if (!confirmDialog) return
+                setConfirmBusy(true)
+                try {
+                  await confirmDialog.onConfirm()
+                  setConfirmDialog(null)
+                } catch (err: any) {
+                  toast.show(String(err?.message ?? err), 'error')
+                } finally {
+                  setConfirmBusy(false)
+                }
+              }}
+            >
+              {confirmDialog?.confirmLabel ?? 'Confirm'}
             </button>
           </div>
         </div>
@@ -1317,7 +1953,11 @@ export default function App() {
           settingsOpen ? 'flex opacity-100' : 'hidden opacity-0'
         )}
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget) setSettingsOpen(false)
+          if (e.target === e.currentTarget) {
+            setSettingsDraft(null)
+            setEnvDrafts(null)
+            setSettingsOpen(false)
+          }
         }}
       >
         <div
@@ -1329,7 +1969,11 @@ export default function App() {
             <button
               id="closeSettingsBtn"
               className="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-              onClick={() => setSettingsOpen(false)}
+              onClick={() => {
+                setSettingsDraft(null)
+                setEnvDrafts(null)
+                setSettingsOpen(false)
+              }}
               type="button"
               title="Close"
             >
@@ -1409,6 +2053,41 @@ export default function App() {
               </div>
 
               <div className="mb-5">
+                <label className="block text-gray-700 dark:text-gray-300 font-medium mb-1.5 text-[12px]">
+                  Environments
+                </label>
+                <div className="space-y-2">
+                  {(envDrafts ?? displayEnvs).map((e) => (
+                    <div key={e.id} className="flex items-center gap-2">
+                      <div className="w-36 shrink-0 flex items-center text-[12px] text-gray-700 dark:text-gray-200 font-medium">
+                        <span className={clsx('w-2 h-2 rounded-full mr-2', envToneDot(e.name))} />
+                        <span className="truncate">{e.name}</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={e.baseUrl ?? ''}
+                        onChange={(ev) => {
+                          const v = ev.target.value
+                          setEnvDrafts((prev) => {
+                            const base = (prev ?? displayEnvs).map((x) => ({ ...x, vars: { ...(x.vars ?? {}) } }))
+                            const i = base.findIndex((x) => x.id === e.id)
+                            if (i >= 0) base[i] = { ...base[i], baseUrl: v }
+                            return base
+                          })
+                        }}
+                        placeholder="Base URL (optional)"
+                        className="flex-1 min-w-0 bg-surface-50 dark:bg-surface-900 border border-ui-border dark:border-[#333] rounded-md px-3 py-1.5 text-gray-800 dark:text-gray-200 focus:border-ui-primary dark:focus:border-ui-primary focus:ring-2 focus:ring-ui-primary/20 transition-all outline-none font-mono text-[12px]"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+                  Base URL is optional. When set, requests can use relative paths and will be joined with the active
+                  environment base URL.
+                </div>
+              </div>
+
+              <div className="mb-5">
                 <label className="flex items-center cursor-pointer group">
                   <div className="relative flex items-center justify-center w-4 h-4 mr-2">
                     <input
@@ -1467,6 +2146,7 @@ export default function App() {
               className="px-4 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-800 rounded-md transition-colors font-medium"
               onClick={() => {
                 setSettingsDraft(null)
+                setEnvDrafts(null)
                 setSettingsOpen(false)
               }}
               type="button"
@@ -1512,10 +2192,24 @@ function methodToneDotClass(method: string): string {
   return 'bg-http-get'
 }
 
+function methodShort(method: string): string {
+  const m = (method || '').toUpperCase()
+  if (m === 'DELETE') return 'DEL'
+  return m || 'GET'
+}
+
 function statusToneClass(status: number): string {
   if (status >= 200 && status < 300) return 'text-http-get'
   if (status >= 400) return 'text-http-delete'
   return 'text-http-post'
+}
+
+function joinURLPath(basePath: string, addPath: string): string {
+  const a = (basePath || '').replace(/\/+$/, '')
+  const b = (addPath || '').replace(/^\/+/, '')
+  if (!a) return '/' + b
+  if (!b) return a
+  return a + '/' + b
 }
 
 function fingerprintURL(req: Request): string {
@@ -1542,21 +2236,22 @@ function computeDisplayURL(req: Request, env: Environment | null): string {
 }
 
 function computeBaseURL(req: Request, env: Environment | null): string {
-  if (req.urlMode === 'basepath') {
-    const base = env?.baseUrl?.trim()
-    const p = (req.path || '/').trim()
-    if (base) {
-      try {
-        const u = new URL(p, base)
-        u.search = ''
-        u.hash = ''
-        return u.toString()
-      } catch {
-        // ignore
-      }
-    }
+  if (req.urlMode !== 'basepath') return (req.urlFull || '').trim()
+
+  const baseRaw = (env?.baseUrl || '').trim()
+  // When base URL is missing, fall back to the stored full URL (so sends still work).
+  if (!baseRaw) return (req.urlFull || '').trim()
+
+  try {
+    const u = new URL(baseRaw)
+    const p = (req.path || '/').trim() || '/'
+    u.pathname = joinURLPath(u.pathname, p)
+    u.search = ''
+    u.hash = ''
+    return u.toString()
+  } catch {
+    return (req.urlFull || '').trim()
   }
-  return (req.urlFull || '').trim()
 }
 
 function applyUrlTextToRequest(req: Request, urlText: string, env: Environment | null): Request {
@@ -1570,17 +2265,11 @@ function applyUrlTextToRequest(req: Request, urlText: string, env: Environment |
     if (!prevByKey.has(kv.key)) prevByKey.set(kv.key, kv)
   }
 
-  try {
-    const u = trimmed.includes('://')
-      ? new URL(trimmed)
-      : env?.baseUrl?.trim()
-        ? new URL(trimmed, env.baseUrl.trim())
-        : (() => {
-            throw new Error('relative without base')
-          })()
+  const envBaseRaw = (env?.baseUrl || '').trim()
 
+  function kvFromSearchParams(sp: URLSearchParams): KV[] {
     const nextQuery: KV[] = []
-    u.searchParams.forEach((value, key) => {
+    sp.forEach((value, key) => {
       const prevRow = prevByKey.get(key)
       nextQuery.push({
         enabled: true,
@@ -1590,17 +2279,92 @@ function applyUrlTextToRequest(req: Request, urlText: string, env: Environment |
         description: prevRow?.description || '',
       })
     })
-    u.search = ''
-    u.hash = ''
+    return nextQuery
+  }
+
+  function computeFullFromBasePath(baseRaw: string, pathRaw: string): string {
+    try {
+      const u = new URL(baseRaw)
+      u.pathname = joinURLPath(u.pathname, pathRaw || '/')
+      u.search = ''
+      u.hash = ''
+      return u.toString()
+    } catch {
+      return ''
+    }
+  }
+
+  function tryExtractPathFromFullURL(u: URL, baseRaw: string): string | null {
+    if (!baseRaw) return null
+    try {
+      const base = new URL(baseRaw)
+      if (u.origin !== base.origin) return null
+
+      const basePath = base.pathname.replace(/\/+$/, '')
+      const fullPath = u.pathname || '/'
+      if (basePath) {
+        if (fullPath === basePath) return '/'
+        if (!fullPath.startsWith(basePath + '/')) return null
+        const rest = fullPath.slice(basePath.length)
+        return rest || '/'
+      }
+      return fullPath || '/'
+    } catch {
+      return null
+    }
+  }
+
+  // Absolute URL input.
+  if (trimmed.includes('://')) {
+    try {
+      const u = new URL(trimmed)
+      const nextQuery = kvFromSearchParams(u.searchParams)
+      u.search = ''
+      u.hash = ''
+
+      const extracted = tryExtractPathFromFullURL(u, envBaseRaw)
+      if (extracted && envBaseRaw) {
+        const urlFull = u.toString()
+        return normalizeRequest({
+          ...prev,
+          urlMode: 'basepath',
+          urlFull,
+          path: extracted,
+          queryParams: nextQuery,
+        })
+      }
+
+      return normalizeRequest({
+        ...prev,
+        urlMode: 'full',
+        urlFull: u.toString(),
+        queryParams: nextQuery,
+      })
+    } catch {
+      return normalizeRequest({ ...prev, urlMode: 'full', urlFull: trimmed })
+    }
+  }
+
+  // Relative path input (when env base URL exists, store as basepath).
+  const qIdx = trimmed.indexOf('?')
+  const rawPath = (qIdx >= 0 ? trimmed.slice(0, qIdx) : trimmed).trim()
+  const rawQuery = qIdx >= 0 ? trimmed.slice(qIdx + 1) : ''
+  const nextQuery = kvFromSearchParams(new URLSearchParams(rawQuery))
+
+  if (envBaseRaw) {
+    const path = rawPath || '/'
+    const urlFull = computeFullFromBasePath(envBaseRaw, path)
     return normalizeRequest({
       ...prev,
-      urlMode: 'full',
-      urlFull: u.toString(),
+      urlMode: 'basepath',
+      urlFull: urlFull || prev.urlFull,
+      path,
       queryParams: nextQuery,
     })
-  } catch {
-    return normalizeRequest({ ...prev, urlMode: 'full', urlFull: trimmed })
   }
+
+  const baseOnly = rawPath || trimmed
+  return normalizeRequest({ ...prev, urlMode: 'full', urlFull: baseOnly, queryParams: nextQuery })
 }
 
 function filterTree(nodes: BootstrapData['tree'], q: string): BootstrapData['tree'] {
@@ -1643,6 +2407,20 @@ function flattenFolderOptions(nodes: BootstrapData['tree']): FolderOption[] {
   }
   walk(nodes, 0)
   return out
+}
+
+function findNodeDepth(nodes: BootstrapData['tree'], nodeId: string): number {
+  function walk(list: BootstrapData['tree'], depth: number): number {
+    for (const n of list) {
+      if (n.type === 'folder' && n.id === nodeId) return depth
+      if (n.type === 'folder' && n.children?.length) {
+        const d = walk(n.children, depth + 1)
+        if (d) return d
+      }
+    }
+    return 0
+  }
+  return walk(nodes, 1)
 }
 
 function findNodeWithParentByNodeId(

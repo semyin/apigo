@@ -153,3 +153,18 @@ type SendResult struct {
 	Headers    map[string][]string `json:"headers"`
 	Body       string              `json:"body"`
 }
+
+type HistoryItem struct {
+	ID          string  `json:"id"`
+	RequestID   string  `json:"requestId"`
+	RequestName string  `json:"requestName"`
+	Method      string  `json:"method"`
+	URLMode     URLMode `json:"urlMode"`
+	URLFull     string  `json:"urlFull"`
+	Path        string  `json:"path"`
+	StartedAt   int64   `json:"startedAt"`
+	DurationMs  int64   `json:"durationMs"`
+	Status      int     `json:"status"`
+	OK          bool    `json:"ok"`
+	Error       string  `json:"error,omitempty"`
+}

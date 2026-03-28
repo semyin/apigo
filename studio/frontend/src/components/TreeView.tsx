@@ -92,7 +92,7 @@ function TreeNodeRow({
           style={{ marginLeft: depth * 12 }}
         >
           <div className="flex items-center min-w-0">
-            <span className="w-4 mr-1.5 flex items-center justify-center">
+            <span className="w-4 mr-1.5 flex items-center justify-center shrink-0">
               <i
                 className={[
                   'fa-solid fa-chevron-right',
@@ -103,10 +103,11 @@ function TreeNodeRow({
                 ].join(' ')}
               />
             </span>
-            <span className="relative w-4 h-4 mr-2 text-[12px]">
+            <span className="relative w-4 h-4 mr-2 text-[12px] flex items-center justify-center shrink-0">
               <i
                 className={[
                   'fa-regular fa-folder text-yellow-500 absolute inset-0',
+                  'flex items-center justify-center',
                   'transition-all duration-200',
                   isCollapsed ? 'opacity-100 scale-100' : 'opacity-0 scale-95',
                 ].join(' ')}
@@ -114,6 +115,7 @@ function TreeNodeRow({
               <i
                 className={[
                   'fa-regular fa-folder-open text-yellow-500 absolute inset-0',
+                  'flex items-center justify-center',
                   'transition-all duration-200',
                   isCollapsed ? 'opacity-0 scale-105' : 'opacity-100 scale-100',
                 ].join(' ')}
