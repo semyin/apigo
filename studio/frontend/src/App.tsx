@@ -359,26 +359,26 @@ export default function App() {
     if (!req) return
     setErrorMsg('')
 
-    const prepared = applyUrlTextToRequest(req, urlText, activeEnv)
-    const urlChanged = fingerprintURL(prepared) !== fingerprintURL(req)
-    const requestId = selectedRequestId || req.id
-
-    if (dirty || urlChanged) {
-      setSaving(true)
-      try {
-        await backend.saveRequest(prepared)
-        setReq(prepared)
-        setDirty(false)
-      } catch (err: any) {
-        setErrorMsg(String(err?.message ?? err))
-        setSaving(false)
-        return
-      }
-      setSaving(false)
-    }
-
     setSending(true)
     try {
+      const prepared = applyUrlTextToRequest(req, urlText, activeEnv)
+      const urlChanged = fingerprintURL(prepared) !== fingerprintURL(req)
+      const requestId = selectedRequestId || req.id
+
+      if (dirty || urlChanged) {
+        setSaving(true)
+        try {
+          await backend.saveRequest(prepared)
+          setReq(prepared)
+          setDirty(false)
+        } catch (err: any) {
+          setErrorMsg(String(err?.message ?? err))
+          return
+        } finally {
+          setSaving(false)
+        }
+      }
+
       const res = await backend.sendRequest(requestId)
       setResponse(res)
       setResTab('body')
@@ -1873,6 +1873,16 @@ export default function App() {
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto p-4 relative group">
+              {sending ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 dark:bg-surface-950/60 backdrop-blur-[1px]">
+                  <div className="flex items-center gap-3 rounded-lg border border-ui-border dark:border-ui-borderDark bg-white/90 dark:bg-surface-900/85 px-4 py-2 shadow-subtle">
+                    <span className="h-4 w-4 rounded-full border-2 border-ui-primary/30 border-t-ui-primary animate-spin" />
+                    <span className="text-[12px] font-medium text-gray-700 dark:text-gray-200">
+                      {t('sendingRequest')}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
               {!response ? (
                 <div className="text-[12px] text-gray-500 dark:text-gray-400">{t('noResponseYet')}</div>
               ) : !response.ok ? (

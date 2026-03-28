@@ -21,6 +21,7 @@ export function initI18n() {
           enterRequestUrl: '请输入请求 URL',
 
           send: '发送',
+          sendingRequest: '请求中...',
           save: '保存',
           saveAs: '另存为',
           saveRequest: '保存请求',
@@ -142,6 +143,7 @@ export function initI18n() {
           enterRequestUrl: 'Enter request URL',
 
           send: 'Send',
+          sendingRequest: 'Sending...',
           save: 'Save',
           saveAs: 'Save As',
           saveRequest: 'Save Request',
