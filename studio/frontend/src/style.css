@@ -193,6 +193,16 @@ body.resizing-rows * {
   flex-shrink: 0;
 }
 
+/* Tab strip: allow horizontal scroll without showing or reserving scrollbar space (Chrome-like). */
+.tabs-scroll {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+
+.tabs-scroll::-webkit-scrollbar {
+  height: 0px;
+}
+
 .table-divider-left {
   position: relative;
 }

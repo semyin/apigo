@@ -19,7 +19,7 @@ import { i18n } from './i18n'
 type ReqTab = 'params' | 'headers' | 'body' | 'auth'
 type ResTab = 'body' | 'headers' | 'cookies'
 
-type SidebarContextKind = 'folder' | 'request' | 'blank' | 'history'
+type SidebarContextKind = 'folder' | 'request' | 'blank' | 'history' | 'tab'
 type SidebarContextMenu = {
   kind: SidebarContextKind
   nodeId: string | null
@@ -57,6 +57,7 @@ export default function App() {
 
   const saveTimer = useRef<number | null>(null)
 
+  const tabsScrollRef = useRef<HTMLDivElement | null>(null)
   const urlInputRef = useRef<HTMLInputElement | null>(null)
   const [urlText, setUrlText] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -373,6 +374,83 @@ export default function App() {
     }
   }
 
+  function closeAllTabsNow() {
+    setOpenTabs([])
+    setSelectedRequestId('')
+    setReq(null)
+    setResponse(null)
+    setDirty(false)
+  }
+
+  function closeAllTabs() {
+    dd.close()
+    setCtxMenu(null)
+
+    if (selectedRequestId && dirty && settings?.autoSave === false) {
+      setConfirmDialog({
+        title: 'Unsaved changes',
+        message: 'Save changes before closing all tabs?',
+        confirmLabel: 'Save & Close',
+        danger: false,
+        onConfirm: async () => {
+          await saveNow()
+          closeAllTabsNow()
+        },
+      })
+      return
+    }
+
+    closeAllTabsNow()
+  }
+
+  function isTabSaved(requestId: string): boolean {
+    const saved = !!findNodeWithParentByRequestId(tree, requestId)
+    if (!saved) return false
+    if (requestId === selectedRequestId) return !dirty
+    return true
+  }
+
+  async function closeSavedTabs() {
+    dd.close()
+    setCtxMenu(null)
+
+    if (!openTabs.length) return
+    const savedIds = openTabs.filter((id) => isTabSaved(id))
+    if (!savedIds.length) return
+
+    const remaining = openTabs.filter((id) => !savedIds.includes(id))
+    setOpenTabs(remaining)
+
+    if (!remaining.length) {
+      setSelectedRequestId('')
+      setReq(null)
+      setResponse(null)
+      setDirty(false)
+      return
+    }
+
+    if (!remaining.includes(selectedRequestId)) {
+      try {
+        await loadRequestInPlace(remaining[0])
+      } catch (err: any) {
+        toast.show(String(err?.message ?? err), 'error')
+      }
+    }
+  }
+
+  async function closeOtherTabs(targetRequestId: string) {
+    if (!targetRequestId) return
+    dd.close()
+    setCtxMenu(null)
+
+    try {
+      if (targetRequestId !== selectedRequestId) await selectRequest(targetRequestId)
+      setOpenTabs([targetRequestId])
+    } catch (err: any) {
+      toast.show(String(err?.message ?? err), 'error')
+    }
+  }
+
   async function refreshTree() {
     if (!activeProjectId) return []
     const next = await backend.getTree(activeProjectId)
@@ -420,7 +498,7 @@ export default function App() {
   }
 
   function openSidebarContextMenu(args: {
-    kind: Exclude<SidebarContextKind, 'blank' | 'history'>
+    kind: Exclude<SidebarContextKind, 'blank' | 'history' | 'tab'>
     nodeId: string
     requestId?: string
     clientX: number
@@ -444,6 +522,11 @@ export default function App() {
   function openHistoryContextMenu(historyId: string, clientX: number, clientY: number) {
     dd.close()
     setCtxMenu({ kind: 'history', nodeId: null, historyId, left: clientX, top: clientY })
+  }
+
+  function openTabContextMenu(requestId: string, clientX: number, clientY: number) {
+    dd.close()
+    setCtxMenu({ kind: 'tab', nodeId: null, requestId, left: clientX, top: clientY })
   }
 
   function openRenameDialog(nodeId: string) {
@@ -681,6 +764,18 @@ export default function App() {
     setSaveName(mode === 'saveAs' ? `${baseName} Copy` : baseName)
     setSaveParentId(found?.parentId ?? null)
     setSaveDialogOpen(true)
+  }
+
+  function onTabsWheel(e: React.WheelEvent<HTMLDivElement>) {
+    const el = tabsScrollRef.current
+    if (!el) return
+    if (el.scrollWidth <= el.clientWidth) return
+
+    // Translate vertical wheel into horizontal scroll, similar to Chrome's tab strip.
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      el.scrollLeft += e.deltaY
+      e.preventDefault()
+    }
   }
 
   async function confirmSaveDialog() {
@@ -1102,6 +1197,34 @@ export default function App() {
               <i className="fa-solid fa-trash mr-2 text-[11px]" /> Delete
             </button>
           </>
+        ) : ctxMenu?.kind === 'tab' && ctxMenu.requestId ? (
+          <>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={closeAllTabs}
+            >
+              <i className="fa-solid fa-rectangle-xmark mr-2 text-[11px] text-gray-400" /> Close All
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => {
+                void closeSavedTabs()
+              }}
+            >
+              <i className="fa-solid fa-check mr-2 text-[11px] text-gray-400" /> Close Saved
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center px-3 py-1.5 text-left text-gray-800 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-900 transition-colors"
+              onClick={() => {
+                void closeOtherTabs(ctxMenu.requestId!)
+              }}
+            >
+              <i className="fa-solid fa-clone mr-2 text-[11px] text-gray-400" /> Close Others
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -1175,7 +1298,11 @@ export default function App() {
         <div className="p-4 pb-3">
           {/* Request tabs (template extension) */}
           <div className="flex items-center gap-2 mb-2">
-            <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto">
+            <div
+              ref={tabsScrollRef}
+              className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto overflow-y-hidden tabs-scroll"
+              onWheel={onTabsWheel}
+            >
               {openTabs.map((id) => {
                 const hit = findNodeWithParentByRequestId(tree, id)
                 const name = hit?.node.name ?? (id === selectedRequestId ? req?.id || 'Request' : 'Request')
@@ -1186,14 +1313,19 @@ export default function App() {
                     key={id}
                     type="button"
                     className={clsx(
-                      'group h-8 max-w-[260px] px-2.5 rounded-md border flex items-center gap-2 shrink-0 transition-colors',
+                      'group h-8 max-w-[260px] px-2.5 rounded-md flex items-center gap-2 shrink-0 transition-colors',
                       active
-                        ? 'border-ui-primary/40 bg-ui-primary/5 text-ui-primary dark:text-blue-300'
-                        : 'border-ui-border dark:border-ui-borderDark bg-white dark:bg-surface-800/40 text-gray-700 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800'
+                        ? 'bg-ui-primary/10 text-ui-primary dark:text-blue-300 hover:bg-ui-primary/15'
+                        : 'bg-surface-50 dark:bg-surface-800/40 text-gray-700 dark:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-800'
                     )}
                     onClick={() => {
                       setCtxMenu(null)
                       if (id !== selectedRequestId) selectRequest(id)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openTabContextMenu(id, e.clientX, e.clientY)
                     }}
                     title={name}
                   >
@@ -1223,7 +1355,7 @@ export default function App() {
             </div>
             <button
               type="button"
-              className="w-8 h-8 flex items-center justify-center rounded-md border border-ui-border dark:border-ui-borderDark bg-white dark:bg-surface-800/40 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-gray-600 dark:text-gray-200 shrink-0"
+              className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-50 dark:bg-surface-800/40 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-gray-600 dark:text-gray-200 shrink-0"
               onClick={addRequestFromTabs}
               disabled={!activeProjectId}
               title="New request"
