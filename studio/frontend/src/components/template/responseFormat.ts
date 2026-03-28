@@ -35,19 +35,39 @@ function escapeHtml(text: string): string {
   return (text || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
-export function renderBodyAsHtml(body: string): string {
+export type ResponseBodyView = 'pretty' | 'raw'
+
+export function tryFormatJson(body: string): { ok: boolean; pretty: string } {
   const trimmed = (body || '').trim()
-  if (!trimmed) return ''
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(trimmed)
-      const pretty = JSON.stringify(parsed, null, 2)
-      return highlightJson(pretty)
-    } catch {
-      // fallthrough
-    }
+  if (!trimmed) return { ok: false, pretty: '' }
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return { ok: false, pretty: '' }
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    return { ok: true, pretty: JSON.stringify(parsed, null, 2) }
+  } catch {
+    return { ok: false, pretty: '' }
   }
-  return escapeHtml(body)
+}
+
+export function bodyTextForView(body: string, view: ResponseBodyView): string {
+  const raw = body ?? ''
+  if (view === 'raw') return raw
+
+  const formatted = tryFormatJson(raw)
+  return formatted.ok ? formatted.pretty : raw
+}
+
+export function renderBodyAsHtml(body: string, view: ResponseBodyView = 'pretty'): string {
+  const raw = body ?? ''
+
+  if (view === 'raw') {
+    return escapeHtml(raw)
+  }
+
+  const formatted = tryFormatJson(raw)
+  if (formatted.ok) return highlightJson(formatted.pretty)
+  return escapeHtml(raw)
 }
 
 function highlightJson(text: string): string {
@@ -118,4 +138,3 @@ function highlightJson(text: string): string {
   }
   return out
 }
-

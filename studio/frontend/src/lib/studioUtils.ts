@@ -52,6 +52,21 @@ export function fingerprintURL(req: Request): string {
 }
 
 export function computeDisplayURL(req: Request, env: Environment | null): string {
+  // When an environment baseUrl is configured and the request is in basepath mode,
+  // the address bar should only show the relative path (ApiFox-style).
+  const envBaseRaw = (env?.baseUrl || '').trim()
+  if (req.urlMode === 'basepath' && envBaseRaw) {
+    const p = (req.path || '').trim() || '/'
+    const q = new URLSearchParams()
+    for (const kv of req.queryParams ?? []) {
+      if (!kv.enabled) continue
+      if (!kv.key?.trim()) continue
+      q.append(kv.key, kv.value ?? '')
+    }
+    const qs = q.toString()
+    return qs ? `${p}?${qs}` : p
+  }
+
   const base = computeBaseURL(req, env)
   if (!base) return ''
 
@@ -308,4 +323,3 @@ export function findFirstRequestId(nodes: BootstrapData['tree']): string {
   }
   return ''
 }
-

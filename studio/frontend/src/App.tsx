@@ -12,7 +12,14 @@ import { CookiesTemplateView, cookieCount } from './components/template/CookiesT
 import { useDropdown } from './components/template/DropdownContext'
 import { HeadersTemplateView } from './components/template/HeadersTemplateView'
 import { KVFlexTable } from './components/template/KVFlexTable'
-import { copyToClipboard, headerCount, renderBodyAsHtml } from './components/template/responseFormat'
+import {
+  bodyTextForView,
+  copyToClipboard,
+  headerCount,
+  renderBodyAsHtml,
+  tryFormatJson,
+  type ResponseBodyView,
+} from './components/template/responseFormat'
 import { applyThemeClass, getStoredTheme, resolveTheme, storeTheme, type Theme } from './lib/theme'
 import { formatBytes, normalizeRequest } from './lib/normalize'
 import {
@@ -74,6 +81,7 @@ export default function App() {
 
   const [reqTab, setReqTab] = useState<ReqTab>('params')
   const [resTab, setResTab] = useState<ResTab>('body')
+  const [resBodyView, setResBodyView] = useState<ResponseBodyView>('pretty')
   const [response, setResponse] = useState<SendResult | null>(null)
 
   const [sending, setSending] = useState(false)
@@ -137,6 +145,16 @@ export default function App() {
   )
 
   const displayEnvs = useMemo(() => sortEnvsForDisplay(envs), [envs])
+
+  const canFormatResponseJson = useMemo(() => {
+    if (!response?.ok) return false
+    return tryFormatJson(response.body ?? '').ok
+  }, [response?.ok, response?.body])
+
+  const responseBodyText = useMemo(() => {
+    if (!response?.ok) return ''
+    return bodyTextForView(response.body ?? '', resBodyView)
+  }, [response?.ok, response?.body, resBodyView])
 
   useEffect(() => {
     if (!renameOpen) return
@@ -1846,7 +1864,36 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="flex items-center space-x-4 font-mono text-[12px]">
+              <div className="flex items-center gap-4 font-mono text-[12px]">
+                {response?.ok && resTab === 'body' && canFormatResponseJson ? (
+                  <div className="h-7 rounded-md border border-ui-border dark:border-ui-borderDark bg-surface-100 dark:bg-surface-800 overflow-hidden flex">
+                    <button
+                      type="button"
+                      className={clsx(
+                        'h-full px-2.5 text-[11px] font-semibold transition-colors border-r border-ui-border dark:border-ui-borderDark',
+                        resBodyView === 'pretty'
+                          ? 'bg-white dark:bg-surface-950 text-gray-900 dark:text-gray-100'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-700'
+                      )}
+                      onClick={() => setResBodyView('pretty')}
+                    >
+                      {t('pretty')}
+                    </button>
+                    <button
+                      type="button"
+                      className={clsx(
+                        'h-full px-2.5 text-[11px] font-semibold transition-colors',
+                        resBodyView === 'raw'
+                          ? 'bg-white dark:bg-surface-950 text-gray-900 dark:text-gray-100'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-700'
+                      )}
+                      onClick={() => setResBodyView('raw')}
+                    >
+                      {t('raw')}
+                    </button>
+                  </div>
+                ) : null}
+
                 {response?.ok ? (
                   <>
                     <span className="text-gray-500 dark:text-gray-400">
@@ -1891,14 +1938,33 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  <div id="res-body" className={clsx('res-tab-content h-full', resTab === 'body' ? 'block' : 'hidden')}>
-                    <div className="absolute right-4 top-4 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div
+                    id="res-body"
+                    tabIndex={0}
+                    className={clsx(
+                      'res-tab-content h-full focus:outline-none',
+                      resTab === 'body' ? 'block' : 'hidden'
+                    )}
+                    onMouseDown={(e) => {
+                      if (e.button !== 0) return
+                      ;(e.currentTarget as HTMLDivElement).focus({ preventScroll: true })
+                    }}
+                    onKeyDown={(e) => {
+                      if (!(e.ctrlKey || e.metaKey)) return
+                      if (e.key.toLowerCase() !== 'a') return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      copyToClipboard(responseBodyText)
+                      toast.show(t('copiedToClipboard'), 'success')
+                    }}
+                  >
+                    <div className="absolute right-4 top-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         type="button"
                         className="w-6 h-6 rounded bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-gray-500 dark:text-gray-300 flex items-center justify-center border border-ui-border dark:border-ui-borderDark"
                         title={t('copy')}
                         onClick={() => {
-                           copyToClipboard(response.body ?? '')
+                          copyToClipboard(responseBodyText)
                           toast.show(t('copiedToClipboard'), 'success')
                         }}
                       >
@@ -1906,8 +1972,13 @@ export default function App() {
                       </button>
                     </div>
                     <pre
-                      className="font-mono text-[13px] leading-[1.6] overflow-x-auto pb-4"
-                      dangerouslySetInnerHTML={{ __html: renderBodyAsHtml(response.body ?? '') }}
+                      className={clsx(
+                        'font-mono text-[13px] leading-[1.6] pb-4',
+                        resBodyView === 'raw'
+                          ? 'whitespace-pre-wrap break-words overflow-x-hidden'
+                          : 'whitespace-pre overflow-x-auto'
+                      )}
+                      dangerouslySetInnerHTML={{ __html: renderBodyAsHtml(response.body ?? '', resBodyView) }}
                     />
                   </div>
 

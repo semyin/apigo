@@ -85,6 +85,8 @@ export function initI18n() {
           noResponseYet: '暂无响应。',
           requestFailed: '请求失败。',
           copy: '复制',
+          pretty: '格式化',
+          raw: '原始',
           copiedToClipboard: '已复制到剪贴板',
 
           urlModeFull: '完整 URL',
@@ -207,6 +209,8 @@ export function initI18n() {
           noResponseYet: 'No response yet.',
           requestFailed: 'Request failed.',
           copy: 'Copy',
+          pretty: 'Pretty',
+          raw: 'Raw',
           copiedToClipboard: 'Copied to clipboard',
 
           urlModeFull: 'Full URL',
