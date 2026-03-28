@@ -17,7 +17,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "Apigo",
+		Title:  "API Studio",
 		Width:  1280,
 		Height: 800,
 		AssetServer: &assetserver.Options{

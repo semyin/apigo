@@ -1,6 +1,6 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "apigo",
+  "name": "api-studio",
   "outputfilename": "studio",
   "build:tags": "native_webview2loader",
   "frontend:install": "npm install",
@@ -12,4 +12,3 @@
     "email": "semyin@163.com"
   }
 }
-
