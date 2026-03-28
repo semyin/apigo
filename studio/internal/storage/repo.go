@@ -296,7 +296,7 @@ func (s *Store) firstRequestID(ctx context.Context, projectID string) (string, e
 		SELECT r.id
 		FROM requests r
 		JOIN nodes n ON n.id = r.node_id
-		WHERE n.project_id = ?
+		WHERE n.project_id = ? AND n.is_draft = 0
 		ORDER BY r.updated_at DESC
 		LIMIT 1
 	`, projectID).Scan(&id)
@@ -488,10 +488,10 @@ func (s *Store) SaveSettings(ctx context.Context, settings Settings) error {
 func (s *Store) nextSortIndex(ctx context.Context, projectID string, parentID *string) (int64, error) {
 	var idx int64
 	if parentID == nil {
-		err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sort_index), -1) + 1 FROM nodes WHERE project_id=? AND parent_id IS NULL`, projectID).Scan(&idx)
+		err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sort_index), -1) + 1 FROM nodes WHERE project_id=? AND parent_id IS NULL AND is_draft=0`, projectID).Scan(&idx)
 		return idx, err
 	}
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sort_index), -1) + 1 FROM nodes WHERE project_id=? AND parent_id=?`, projectID, *parentID).Scan(&idx)
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sort_index), -1) + 1 FROM nodes WHERE project_id=? AND parent_id=? AND is_draft=0`, projectID, *parentID).Scan(&idx)
 	return idx, err
 }
 
@@ -578,6 +578,83 @@ func (s *Store) CreateRequest(ctx context.Context, projectID string, parentID *s
 	}
 
 	return n, req, nil
+}
+
+func (s *Store) CreateDraftRequest(ctx context.Context, projectID string) (Node, Request, error) {
+	now := s.Now()
+	nodeID := uuid.NewString()
+	reqID := uuid.NewString()
+
+	n := Node{
+		ID:        nodeID,
+		ProjectID: projectID,
+		ParentID:  nil,
+		Type:      NodeTypeRequest,
+		Name:      "New Request",
+		SortIndex: 0,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	req := Request{
+		ID:          reqID,
+		NodeID:      nodeID,
+		Method:      "GET",
+		URLMode:     URLModeFull,
+		URLFull:     "",
+		Path:        "",
+		QueryParams: []KV{},
+		Headers:     defaultTemplateHeaders(),
+		Body:        Body{Type: BodyTypeNone},
+		Auth:        Auth{Type: AuthTypeNone},
+		Description: "",
+		UpdatedAt:   now,
+	}
+
+	err := s.WithTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO nodes(id,project_id,parent_id,type,name,sort_index,is_draft,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?)
+		`, n.ID, n.ProjectID, n.ParentID, n.Type, n.Name, n.SortIndex, 1, n.CreatedAt, n.UpdatedAt)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO requests(id,node_id,method,url_mode,url_full,path,query_params_json,headers_json,body_json,auth_json,description,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+		`, req.ID, req.NodeID, req.Method, req.URLMode, req.URLFull, req.Path, mustJSON(req.QueryParams), mustJSON(req.Headers), mustJSON(req.Body), mustJSON(req.Auth), req.Description, req.UpdatedAt)
+		return err
+	})
+	if err != nil {
+		return Node{}, Request{}, err
+	}
+
+	return n, req, nil
+}
+
+func (s *Store) FinalizeDraft(ctx context.Context, nodeID string, parentID *string, name string) error {
+	if strings.TrimSpace(nodeID) == "" {
+		return errors.New("node id is required")
+	}
+	if strings.TrimSpace(name) == "" {
+		return errors.New("name is required")
+	}
+
+	var projectID string
+	err := s.db.QueryRowContext(ctx, `SELECT project_id FROM nodes WHERE id=?`, nodeID).Scan(&projectID)
+	if err != nil {
+		return err
+	}
+	sortIndex, err := s.nextSortIndex(ctx, projectID, parentID)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `UPDATE nodes SET parent_id=?, name=?, sort_index=?, is_draft=0, updated_at=? WHERE id=?`,
+		parentID, name, sortIndex, s.Now(), nodeID,
+	)
+	return err
 }
 
 func (s *Store) RenameNode(ctx context.Context, nodeID, name string) error {
@@ -670,7 +747,7 @@ func (s *Store) GetTree(ctx context.Context, projectID string) ([]TreeNode, erro
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,parent_id,type,name,sort_index
 		FROM nodes
-		WHERE project_id=?
+		WHERE project_id=? AND is_draft=0
 	`, projectID)
 	if err != nil {
 		return nil, err

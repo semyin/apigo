@@ -18,6 +18,7 @@ func migrate(db *sql.DB) error {
 			type TEXT NOT NULL CHECK(type IN ('folder','request')),
 			name TEXT NOT NULL,
 			sort_index INTEGER NOT NULL,
+			is_draft INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
 			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -73,6 +74,45 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Non-destructive schema upgrades (no versioning yet).
+	if err := ensureColumn(db, "nodes", "is_draft", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	found := false
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notnull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			found = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
+	return err
+}

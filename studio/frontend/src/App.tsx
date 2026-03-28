@@ -56,6 +56,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string>('')
 
   const saveTimer = useRef<number | null>(null)
+  const ensureDraftBusyRef = useRef(false)
 
   const tabsScrollRef = useRef<HTMLDivElement | null>(null)
   const urlInputRef = useRef<HTMLInputElement | null>(null)
@@ -271,6 +272,26 @@ export default function App() {
     setDirty(true)
   }
 
+  async function ensureDraftTab() {
+    if (!activeProjectId) return
+    if (ensureDraftBusyRef.current) return
+    ensureDraftBusyRef.current = true
+    setErrorMsg('')
+    try {
+      const created = await backend.createDraftRequest(activeProjectId)
+      setSelectedRequestId(created.request.id)
+      setOpenTabs([created.request.id])
+      setReq(normalizeRequest(created.request))
+      setDirty(false)
+      setResponse(null)
+      setReqTab('params')
+    } catch (err: any) {
+      setErrorMsg(String(err?.message ?? err))
+    } finally {
+      ensureDraftBusyRef.current = false
+    }
+  }
+
   async function selectRequest(requestId: string) {
     if (!requestId) return
     setErrorMsg('')
@@ -302,6 +323,12 @@ export default function App() {
       setErrorMsg(String(err?.message ?? err))
     }
   }
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    if (openTabs.length) return
+    void ensureDraftTab()
+  }, [activeProjectId, openTabs.length])
 
   async function send() {
     if (!req) return
@@ -443,11 +470,44 @@ export default function App() {
     dd.close()
     setCtxMenu(null)
 
-    try {
-      if (targetRequestId !== selectedRequestId) await selectRequest(targetRequestId)
+    const doClose = async () => {
+      if (targetRequestId !== selectedRequestId) await loadRequestInPlace(targetRequestId)
       setOpenTabs([targetRequestId])
+    }
+
+    if (targetRequestId !== selectedRequestId && dirty && settings?.autoSave === false) {
+      setConfirmDialog({
+        title: 'Unsaved changes',
+        message: 'Save changes before closing other tabs?',
+        confirmLabel: 'Save & Close Others',
+        danger: false,
+        onConfirm: async () => {
+          const ok = await saveNow()
+          if (!ok) return
+          try {
+            await doClose()
+          } catch (err: any) {
+            toast.show(String(err?.message ?? err), 'error')
+            setOpenTabs([])
+            setSelectedRequestId('')
+            setReq(null)
+            setResponse(null)
+            setDirty(false)
+          }
+        },
+      })
+      return
+    }
+
+    try {
+      await doClose()
     } catch (err: any) {
       toast.show(String(err?.message ?? err), 'error')
+      setOpenTabs([])
+      setSelectedRequestId('')
+      setReq(null)
+      setResponse(null)
+      setDirty(false)
     }
   }
 
@@ -722,7 +782,7 @@ export default function App() {
 
     if (requestId !== selectedRequestId) return
 
-    const nextId = nextTabs[idx] ?? nextTabs[idx - 1] ?? findFirstRequestId(tree)
+    const nextId = nextTabs[idx] ?? nextTabs[idx - 1]
     if (nextId) await loadRequestInPlace(nextId)
     else {
       setSelectedRequestId('')
@@ -817,6 +877,17 @@ export default function App() {
         toast.show('Saved as new request', 'success')
       } else {
         const found = findNodeWithParentByNodeId(tree, req.nodeId)
+        if (!found) {
+          await backend.finalizeDraft(req.nodeId, saveParentId, name)
+          await backend.saveRequest(prepared)
+          setReq(prepared)
+          setDirty(false)
+          setSaveDialogOpen(false)
+          if (saveParentId) setCollapsed((p) => ({ ...p, [saveParentId]: false }))
+          await refreshTree()
+          toast.show('Saved', 'success')
+          return
+        }
         const currentName = found?.node.name ?? ''
         const currentParent = found?.parentId ?? null
         if (currentName && currentName !== name) await backend.renameNode(req.nodeId, name)
@@ -1305,7 +1376,7 @@ export default function App() {
             >
               {openTabs.map((id) => {
                 const hit = findNodeWithParentByRequestId(tree, id)
-                const name = hit?.node.name ?? (id === selectedRequestId ? req?.id || 'Request' : 'Request')
+                const name = hit?.node.name ?? 'New Request'
                 const method = (hit?.node.method || (id === selectedRequestId ? req?.method : '') || 'GET').toUpperCase()
                 const active = id === selectedRequestId
                 return (

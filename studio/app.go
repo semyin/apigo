@@ -168,6 +168,17 @@ func (a *App) CreateRequest(projectID string, parentID *string, name string) (Cr
 	return CreateRequestResult{Node: n, Request: r}, nil
 }
 
+func (a *App) CreateDraftRequest(projectID string) (CreateRequestResult, error) {
+	if a.store == nil {
+		return CreateRequestResult{}, errors.New("store not ready")
+	}
+	n, r, err := a.store.CreateDraftRequest(a.ctx, projectID)
+	if err != nil {
+		return CreateRequestResult{}, err
+	}
+	return CreateRequestResult{Node: n, Request: r}, nil
+}
+
 func (a *App) DuplicateRequest(requestID string) (CreateRequestResult, error) {
 	if a.store == nil {
 		return CreateRequestResult{}, errors.New("store not ready")
@@ -198,6 +209,13 @@ func (a *App) DeleteNode(nodeID string) error {
 		return errors.New("store not ready")
 	}
 	return a.store.DeleteNode(a.ctx, nodeID)
+}
+
+func (a *App) FinalizeDraft(nodeID string, parentID *string, name string) error {
+	if a.store == nil {
+		return errors.New("store not ready")
+	}
+	return a.store.FinalizeDraft(a.ctx, nodeID, parentID, name)
 }
 
 func (a *App) GetRequest(requestID string) (storage.Request, error) {

@@ -6,6 +6,10 @@ export function Bootstrap() {
   return window['go']['main']['App']['Bootstrap']();
 }
 
+export function CreateDraftRequest(arg1) {
+  return window['go']['main']['App']['CreateDraftRequest'](arg1);
+}
+
 export function CreateFolder(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateFolder'](arg1, arg2, arg3);
 }
@@ -44,6 +48,10 @@ export function ExportOpenAPIFromDialog(arg1) {
 
 export function ExportPostmanFromDialog(arg1) {
   return window['go']['main']['App']['ExportPostmanFromDialog'](arg1);
+}
+
+export function FinalizeDraft(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FinalizeDraft'](arg1, arg2, arg3);
 }
 
 export function GetHistory(arg1) {

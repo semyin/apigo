@@ -5,6 +5,8 @@ import {storage} from '../models';
 
 export function Bootstrap():Promise<main.BootstrapData>;
 
+export function CreateDraftRequest(arg1:string):Promise<main.CreateRequestResult>;
+
 export function CreateFolder(arg1:string,arg2:any,arg3:string):Promise<storage.Node>;
 
 export function CreateProject(arg1:string):Promise<storage.Project>;
@@ -24,6 +26,8 @@ export function DuplicateRequest(arg1:string):Promise<main.CreateRequestResult>;
 export function ExportOpenAPIFromDialog(arg1:string):Promise<string>;
 
 export function ExportPostmanFromDialog(arg1:string):Promise<string>;
+
+export function FinalizeDraft(arg1:string,arg2:any,arg3:string):Promise<void>;
 
 export function GetHistory(arg1:string):Promise<storage.SendResult>;
 
