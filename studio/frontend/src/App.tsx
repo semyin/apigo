@@ -1295,7 +1295,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="p-4 pb-3">
+        <div className="px-4 pt-2.5 pb-3">
           {/* Request tabs (template extension) */}
           <div className="flex items-center gap-2 mb-2">
             <div
